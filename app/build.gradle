@@ -1,12 +1,11 @@
 apply plugin: 'com.android.application'
 
 android {
-    compileSdkVersion 26
-    buildToolsVersion "26.0.1"
+    compileSdkVersion buildConfig.compileSdk
     defaultConfig {
         applicationId "info.nukoneko.android.nfcreader"
-        minSdkVersion 15
-        targetSdkVersion 26
+        minSdkVersion buildConfig.minSdk
+        targetSdkVersion buildConfig.targetSdk
         versionCode 1
         versionName "1.0.0"
     }
@@ -14,6 +13,7 @@ android {
         debug {
             minifyEnabled false
             shrinkResources false
+            testCoverageEnabled true
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
         }
         release {
@@ -32,7 +32,10 @@ android {
 }
 
 dependencies {
-    compile 'com.android.support:appcompat-v7:26.0.2'
-    compile 'com.android.support:recyclerview-v7:26.0.2'
-    compile 'com.android.support:design:26.0.2'
+    testImplementation deps.test.junit
+
+    implementation deps.android.component.extensions
+    implementation deps.android.support.appCompat
+    implementation deps.android.support.recyclerView
+    implementation deps.android.support.material
 }

@@ -12,6 +12,7 @@ import java.util.ArrayList;
 import java.util.Date;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 
 import androidx.annotation.NonNull;
 import androidx.lifecycle.AndroidViewModel;
@@ -88,7 +89,12 @@ public final class MainViewModel extends AndroidViewModel {
         final List<NfcEntity> entities = new ArrayList<>();
 
         for (NfcKinds kinds : tagList) {
-            entities.add(new NfcEntity(kinds.getName(), kinds.getTag(), NfcUtil.getData(kinds, tag)));
+            Map<String, Object> tagData = NfcUtil.getData(kinds, tag);
+            StringBuilder formattedData = new StringBuilder();
+            for (Map.Entry<String, Object> entry : tagData.entrySet()) {
+                formattedData.append("◇ ").append(entry.getKey()).append("\n").append(entry.getValue() == null ? "-" : entry.getValue()).append("\n");
+            }
+            entities.add(new NfcEntity(kinds, formattedData.toString()));
         }
 
         if (entities.isEmpty()) {

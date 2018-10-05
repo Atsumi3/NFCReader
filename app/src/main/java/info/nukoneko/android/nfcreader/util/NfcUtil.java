@@ -27,8 +27,10 @@ public final class NfcUtil {
                     NfcA nfcA = NfcA.get(tag);
                     nfcA.connect();
                     if (nfcA.isConnected()) {
-                        data.put("ACQA", MiscUtil.bytesToHex(nfcA.getAtqa()));
+                        data.put("ATQA", MiscUtil.bytesToHex(nfcA.getAtqa()));
                         data.put("SAK", String.valueOf(nfcA.getSak()));
+                        data.put("MaxTransceiveLength", nfcA.getMaxTransceiveLength());
+                        data.put("Timeout", nfcA.getTimeout());
                         nfcA.close();
                     }
                     break;
@@ -38,6 +40,7 @@ public final class NfcUtil {
                     if (nfcB.isConnected()) {
                         data.put("ApplicationData", MiscUtil.bytesToHex(nfcB.getApplicationData()));
                         data.put("ProtocolInfo", MiscUtil.bytesToHex(nfcB.getProtocolInfo()));
+                        data.put("MaxTransceiveLength", nfcB.getMaxTransceiveLength());
                         nfcB.close();
                     }
                     break;
@@ -47,6 +50,8 @@ public final class NfcUtil {
                     if (nfcF.isConnected()) {
                         data.put("SystemCode", MiscUtil.bytesToHex(nfcF.getSystemCode()));
                         data.put("Manufacturer", MiscUtil.bytesToHex(nfcF.getManufacturer()));
+                        data.put("MaxTransceiveLength", nfcF.getMaxTransceiveLength());
+                        data.put("Timeout", nfcF.getTimeout());
                         nfcF.close();
                     }
                     break;
@@ -56,6 +61,7 @@ public final class NfcUtil {
                     if (nfcV.isConnected()) {
                         data.put("DsfId", String.valueOf(nfcV.getDsfId()));
                         data.put("ResponseFlags", String.valueOf(nfcV.getResponseFlags()));
+                        data.put("MaxTransceiveLength", nfcV.getMaxTransceiveLength());
                         nfcV.close();
                     }
                     break;
@@ -65,6 +71,7 @@ public final class NfcUtil {
                         nfcBarcode.connect();
                         if (nfcBarcode.isConnected()) {
                             data.put("Barcode", MiscUtil.bytesToHex(nfcBarcode.getBarcode()));
+                            data.put("Type", nfcBarcode.getType());
                             nfcBarcode.close();
                         }
                     } else {
@@ -76,6 +83,11 @@ public final class NfcUtil {
                     mifareClassic.connect();
                     if (mifareClassic.isConnected()) {
                         data.put("BlockCount", mifareClassic.getBlockCount());
+                        data.put("SectorCount", mifareClassic.getSectorCount());
+                        data.put("Size", mifareClassic.getSize());
+                        data.put("Type", mifareClassic.getType());
+                        data.put("MaxTransceiveLength", mifareClassic.getMaxTransceiveLength());
+                        data.put("Timeout", mifareClassic.getTimeout());
                         mifareClassic.close();
                     }
                     break;
@@ -84,6 +96,8 @@ public final class NfcUtil {
                     mifareUltralight.connect();
                     if (mifareUltralight.isConnected()) {
                         data.put("Type", mifareUltralight.getType());
+                        data.put("MaxTransceiveLength", mifareUltralight.getMaxTransceiveLength());
+                        data.put("Timeout", mifareUltralight.getTimeout());
                         mifareUltralight.close();
                     }
                     break;
@@ -100,6 +114,8 @@ public final class NfcUtil {
                     if (isoDep.isConnected()) {
                         data.put("HistoricalBytes", MiscUtil.bytesToHex(isoDep.getHistoricalBytes()));
                         data.put("HiLayerResponse", MiscUtil.bytesToHex(isoDep.getHiLayerResponse()));
+                        data.put("MaxTransceiveLength", isoDep.getMaxTransceiveLength());
+                        data.put("Timeout", isoDep.getTimeout());
                         isoDep.close();
                     }
                     break;
@@ -110,6 +126,7 @@ public final class NfcUtil {
                         data.put("CachedNdefMessage", ndef.getCachedNdefMessage() != null ? ndef.getCachedNdefMessage().toString() : "");
                         data.put("NdefMessage", ndef.getNdefMessage() != null ? ndef.getNdefMessage().toString() : "");
                         data.put("Type", ndef.getType());
+                        data.put("MaxSize", ndef.getMaxSize());
                         ndef.close();
                     }
                     break;

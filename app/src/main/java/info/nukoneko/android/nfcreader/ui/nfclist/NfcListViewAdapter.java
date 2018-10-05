@@ -84,6 +84,7 @@ public final class NfcListViewAdapter extends RecyclerView.Adapter {
         void bindEntity(NfcEntity entity) {
             if (mBinding.getViewModel() == null) {
                 final ItemNfcListContentViewModel viewModel = new ItemNfcListContentViewModel(entity);
+                viewModel.setListener(mListener);
                 mBinding.setViewModel(viewModel);
             } else {
                 mBinding.getViewModel().setEntity(entity);

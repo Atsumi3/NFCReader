@@ -6,8 +6,8 @@ ext.buildConfig = [
 
 ext.versions = [
         junit                 : '4.12',
-        architectureComponents: '2.0.0-rc01',
-        androidX              : '1.0.0-rc02'
+        architectureComponents: '2.0.0',
+        androidX              : '1.0.0'
 ]
 
 ext.deps = [

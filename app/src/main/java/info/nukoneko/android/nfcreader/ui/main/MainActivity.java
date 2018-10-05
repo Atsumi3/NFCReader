@@ -46,7 +46,9 @@ public final class MainActivity extends AppCompatActivity {
     @Override
     protected void onResume() {
         super.onResume();
-        if (mNfcAdapter != null) {
+        if (mNfcAdapter == null) {
+            mViewModel.onNfcDisabled();
+        } else {
             mNfcAdapter.enableForegroundDispatch(this, mPendingIntent, null, null);
         }
     }

@@ -29,7 +29,7 @@ public final class NfcListFragment extends Fragment {
     private final NfcListViewAdapter.Listener mAdapterListener = new NfcListViewAdapter.Listener() {
         @Override
         public void onEntitySelected(NfcEntity entity) {
-            System.out.println(entity);
+
         }
     };
 

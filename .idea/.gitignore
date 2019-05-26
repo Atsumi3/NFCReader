@@ -1,5 +1,5 @@
 *.xml
-/caches
+caches
 
 !/codeStyleSettings.xml
 !/copyright/*.xml

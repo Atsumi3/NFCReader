@@ -1,63 +1,35 @@
 <?xml version="1.0" encoding="utf-8"?>
-<layout xmlns:android="http://schemas.android.com/apk/res/android">
+<androidx.cardview.widget.CardView xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/item"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:layout_margin="4dp">
 
-    <data>
-
-        <variable
-            name="viewModel"
-            type="info.nukoneko.android.nfcreader.ui.nfclist.ItemNfcListContentViewModel" />
-    </data>
-
-    <androidx.cardview.widget.CardView
-        android:id="@+id/item"
+    <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:layout_margin="4dp"
-        android:onClick="@{viewModel::onViewClick}"
-        android:clickable="true"
-        android:focusable="true">
-        <LinearLayout
+        android:orientation="vertical"
+        android:padding="4dp">
+
+        <TextView
+            android:id="@+id/title"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:orientation="horizontal"
-            android:padding="4dp">
-            <LinearLayout
-                android:layout_width="0dp"
-                android:layout_weight="1"
-                android:layout_height="wrap_content"
-                android:orientation="vertical">
+            android:textSize="20sp"
+            android:textStyle="bold" />
 
-                <TextView
-                    android:id="@+id/tag_title"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:text="@{viewModel.tagTitle}"
-                    android:textStyle="bold"
-                    android:textSize="20sp"/>
+        <TextView
+            android:id="@+id/data"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_margin="4dp"
+            android:textSize="16sp" />
 
-                <TextView
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:text='@{viewModel.data}'
-                    android:textSize="16sp"
-                    android:layout_margin="4dp"/>
-
-                <TextView
-                    android:id="@+id/tag_description"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="4dp"
-                    android:text="@{viewModel.description}"
-                    android:textSize="12sp" />
-            </LinearLayout>
-            <info.nukoneko.android.nfcreader.ui.common.SquareImageView
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_gravity="center_vertical"
-                android:src="@drawable/ic_arrow_right"
-                android:layout_marginRight="8dp"
-                android:layout_marginEnd="8dp"
-                android:visibility="gone"/>
-        </LinearLayout>
-    </androidx.cardview.widget.CardView>
-</layout>
+        <TextView
+            android:id="@+id/description"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="4dp"
+            android:textSize="12sp" />
+    </LinearLayout>
+</androidx.cardview.widget.CardView>

@@ -11,6 +11,7 @@ object Dep {
         const val junit = "junit:junit:4.12"
         const val testRunner = "androidx.test:runner:1.1.0"
         const val espressoCore = "androidx.test.espresso:espresso-core:3.1.1"
+        const val robolectric = "org.robolectric:robolectric:4.2"
     }
 
     object AndroidX {
@@ -25,5 +26,6 @@ object Dep {
     object Kotlin {
         const val version = "1.3.31"
         const val stdlibJvm = "org.jetbrains.kotlin:kotlin-stdlib-jdk7:$version"
+        const val reflect = "org.jetbrains.kotlin:kotlin-reflect:$version"
     }
 }

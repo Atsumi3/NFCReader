@@ -4,9 +4,7 @@
     package="info.nukoneko.android.nfcreader">
 
     <uses-permission android:name="android.permission.NFC"/>
-    <uses-feature
-        android:name="android.hardware.nfc"
-        android:required="true"/>
+    <uses-feature android:name="android.hardware.nfc" android:required="true"/>
 
     <application
         android:allowBackup="false"
@@ -16,7 +14,7 @@
         android:theme="@style/Theme.AppCompat.DayNight"
         tools:ignore="GoogleAppIndexingWarning">
         <activity
-            android:name=".ui.main.MainActivity"
+            android:name=".ui.nfcread.NfcReadActivity"
             android:launchMode="singleTop">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN"/>
@@ -24,12 +22,10 @@
             </intent-filter>
             <intent-filter>
                 <action android:name="android.nfc.action.NDEF_DISCOVERED"/>
+                <action android:name="android.nfc.action.TECH_DISCOVERED" />
+                <action android:name="android.nfc.action.TAG_DISCOVERED" />
                 <category android:name="android.intent.category.DEFAULT"/>
             </intent-filter>
-
-            <meta-data
-                android:name="android.nfc.action.TECH_DISCOVERED"
-                android:resource="@xml/tech_list"/>
         </activity>
     </application>
 

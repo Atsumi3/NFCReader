@@ -35,6 +35,12 @@ android {
         enabled = true
     }
 
+    testOptions {
+        unitTests {
+            includeAndroidResources = true
+        }
+    }
+
     sourceSets {
         all {
             java.srcDirs += "src/${name}/kotlin"
@@ -60,11 +66,13 @@ android {
 
 dependencies {
     testImplementation Dep.Test.junit
+    testImplementation Dep.Test.robolectric
 
     androidTestImplementation Dep.Test.testRunner
     androidTestImplementation Dep.Test.espressoCore
 
     implementation Dep.Kotlin.stdlibJvm
+    implementation Dep.Kotlin.reflect
     implementation Dep.AndroidX.appCompat
     implementation Dep.AndroidX.recyclerView
     implementation Dep.AndroidX.design

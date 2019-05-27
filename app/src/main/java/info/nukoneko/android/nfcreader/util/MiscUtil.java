@@ -1,9 +1,9 @@
 package info.nukoneko.android.nfcreader.util;
 
-final class MiscUtil {
+public class MiscUtil {
     private static final char[] hexArray = "0123456789ABCDEF".toCharArray();
 
-    static String bytesToHex(byte[] bytes) {
+    public static String bytesToHex(byte[] bytes) {
         if (bytes == null) {
             return null;
         }

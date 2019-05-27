@@ -1,14 +1,23 @@
+import dependencies.Dep
+import dependencies.Versions
+
 apply plugin: 'com.android.application'
+apply plugin: 'kotlin-android'
+apply plugin: 'kotlin-android-extensions'
+apply plugin: 'kotlin-kapt'
 
 android {
-    compileSdkVersion buildConfig.compileSdk
+    compileSdkVersion Versions.androidCompileSdkVersion
+
     defaultConfig {
         applicationId "info.nukoneko.android.nfcreader"
-        minSdkVersion buildConfig.minSdk
-        targetSdkVersion buildConfig.targetSdk
-        versionCode 1
-        versionName "1.0.0"
+        minSdkVersion Versions.androidMinSdkVersion
+        targetSdkVersion 28
+        versionCode Versions.androidVersionCode
+        versionName Versions.androidVersionName
+        testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
     }
+
     buildTypes {
         debug {
             minifyEnabled false
@@ -21,20 +30,44 @@ android {
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
         }
     }
-    compileOptions {
-        sourceCompatibility JavaVersion.VERSION_1_7
-        targetCompatibility JavaVersion.VERSION_1_7
-    }
+
     dataBinding {
         enabled = true
+    }
+
+    sourceSets {
+        all {
+            java.srcDirs += "src/${name}/kotlin"
+        }
+        androidTest {
+            java {
+                srcDirs += ["src/sharedTest/java", "src/sharedTest/kotlin"]
+            }
+            resources {
+                srcDirs += "src/sharedTest/resources"
+            }
+        }
+        test {
+            java {
+                srcDirs += ["src/sharedTest/java", "src/sharedTest/kotlin"]
+            }
+            resources {
+                srcDirs += "src/sharedTest/resources"
+            }
+        }
     }
 }
 
 dependencies {
-    testImplementation deps.test.junit
+    testImplementation Dep.Test.junit
 
-    implementation deps.android.component.extensions
-    implementation deps.android.support.appCompat
-    implementation deps.android.support.recyclerView
-    implementation deps.android.support.material
+    androidTestImplementation Dep.Test.testRunner
+    androidTestImplementation Dep.Test.espressoCore
+
+    implementation Dep.Kotlin.stdlibJvm
+    implementation Dep.AndroidX.appCompat
+    implementation Dep.AndroidX.recyclerView
+    implementation Dep.AndroidX.design
+    implementation Dep.AndroidX.lifecycleExtensions
+    implementation Dep.AndroidX.lifecycleLiveData
 }

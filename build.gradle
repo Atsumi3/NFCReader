@@ -1,4 +1,4 @@
-apply from: 'dependencies.gradle'
+import dependencies.Dep
 
 buildscript {
     repositories {
@@ -6,7 +6,8 @@ buildscript {
         jcenter()
     }
     dependencies {
-        classpath 'com.android.tools.build:gradle:3.4.1'
+        classpath Dep.GradlePlugin.android
+        classpath Dep.GradlePlugin.kotlin
     }
 }
 

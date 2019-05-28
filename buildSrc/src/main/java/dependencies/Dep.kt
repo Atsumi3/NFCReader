@@ -12,6 +12,7 @@ object Dep {
         const val testRunner = "androidx.test:runner:1.1.0"
         const val espressoCore = "androidx.test.espresso:espresso-core:3.1.1"
         const val robolectric = "org.robolectric:robolectric:4.2"
+        const val mockito = "com.nhaarman.mockitokotlin2:mockito-kotlin:2.1.0"
     }
 
     object AndroidX {

@@ -67,6 +67,7 @@ android {
 dependencies {
     testImplementation Dep.Test.junit
     testImplementation Dep.Test.robolectric
+    testImplementation Dep.Test.mockito
 
     androidTestImplementation Dep.Test.testRunner
     androidTestImplementation Dep.Test.espressoCore

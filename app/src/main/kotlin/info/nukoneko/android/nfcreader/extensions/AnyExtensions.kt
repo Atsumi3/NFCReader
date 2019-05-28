@@ -1,6 +1,5 @@
 package info.nukoneko.android.nfcreader.extensions
 
-import info.nukoneko.android.nfcreader.util.MiscUtil
 import kotlin.reflect.full.functions
 
 fun Any.allGetterResults(): Map<String, Any?> {
@@ -10,7 +9,8 @@ fun Any.allGetterResults(): Map<String, Any?> {
                 val methodName = it.name.substring(3)
                 val result = it.call(this)
                 methodName to when (result) {
-                    is ByteArray -> MiscUtil.bytesToHex(result)
+                    is Byte -> byteArrayOf(result).toHexString()
+                    is ByteArray -> result.toHexString()
                     is Short -> result.toString()
                     else -> result
                 }

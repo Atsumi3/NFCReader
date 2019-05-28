@@ -120,10 +120,10 @@ class NfcReadViewModel(application: Application) : AndroidViewModel(application)
             val entities: List<NfcEntity> = tag.techList.distinct()
                     .map { techName ->
                         // 読み込まれたNFCタグのクラス情報を取得
-                        val clazz = Class.forName(techName).newInstance()
+                        val tagClass = Class.forName(techName).kotlin
 
                         // NFCタグクラスには static function で get が生えているはずなので見つける
-                        val getMethod = clazz::class.staticFunctions.singleOrNull { it.name == "get" }
+                        val getMethod = tagClass.staticFunctions.singleOrNull { it.name == "get" }
 
                         if (getMethod == null) {
                             // get メソッドが見つからなかった
@@ -166,7 +166,7 @@ class NfcReadViewModel(application: Application) : AndroidViewModel(application)
                     .filter { it != null }
                     .mapNotNull { it }
             readStatus = ReadStatus.SUCCESS(entities)
-
+            NfcAdapter.ACTION_TRANSACTION_DETECTED
         } catch (e: Throwable) {
             readStatus = ReadStatus.FAILED(e)
         }

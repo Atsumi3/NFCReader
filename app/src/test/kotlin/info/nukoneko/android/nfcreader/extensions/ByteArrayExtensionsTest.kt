@@ -1,6 +1,5 @@
 package info.nukoneko.android.nfcreader.extensions
 
-import info.nukoneko.android.nfcreader.extensions.toHexString
 import junit.framework.TestCase.assertEquals
 import org.junit.Test
 

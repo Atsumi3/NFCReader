@@ -12,6 +12,7 @@ import androidx.lifecycle.LiveData
 import androidx.lifecycle.MutableLiveData
 import info.nukoneko.android.nfcreader.R
 import info.nukoneko.android.nfcreader.extensions.allGetterResults
+import info.nukoneko.android.nfcreader.extensions.getParcelize
 import info.nukoneko.android.nfcreader.extensions.mutableLiveDataOf
 import info.nukoneko.android.nfcreader.model.entity.NfcEntity
 import info.nukoneko.android.nfcreader.model.entity.ReadStatus
@@ -25,8 +26,10 @@ import kotlin.reflect.full.staticFunctions
 class NfcReadViewModel(application: Application) : AndroidViewModel(application) {
     private val messagePleaseHoldUpDevice = application.getString(R.string.please_hold_up_device)
     private val messageNfcDisabled = application.getString(R.string.nfc_disabled)
-    private val messageReadableNfcIsNotFound = application.getString(R.string.readable_nfc_is_not_found)
-    private val messageIntentIsNotSupported = application.getString(R.string.intent_is_not_supported)
+    private val messageReadableNfcIsNotFound =
+        application.getString(R.string.readable_nfc_is_not_found)
+    private val messageIntentIsNotSupported =
+        application.getString(R.string.intent_is_not_supported)
 
     private var nfcDisabled = false
     fun onNfcDisabled() {
@@ -108,7 +111,7 @@ class NfcReadViewModel(application: Application) : AndroidViewModel(application)
     }
 
     private fun resolveIntent(intent: Intent) {
-        val tag: Tag? = intent.getParcelableExtra(NfcAdapter.EXTRA_TAG)
+        val tag: Tag? = intent.getParcelize(NfcAdapter.EXTRA_TAG, Tag::class.java)
         if (tag == null) {
             readStatus = ReadStatus.FAILED(RuntimeException(messageIntentIsNotSupported))
             return
@@ -118,53 +121,57 @@ class NfcReadViewModel(application: Application) : AndroidViewModel(application)
 
         try {
             val entities: List<NfcEntity> = tag.techList.distinct()
-                    .map { techName ->
-                        // 読み込まれたNFCタグのクラス情報を取得
-                        val tagClass = Class.forName(techName).kotlin
+                .map { techName ->
+                    // 読み込まれたNFCタグのクラス情報を取得
+                    val tagClass = Class.forName(techName).kotlin
 
-                        // NFCタグクラスには static function で get が生えているはずなので見つける
-                        val getMethod = tagClass.staticFunctions.singleOrNull { it.name == "get" }
+                    // NFCタグクラスには static function で get が生えているはずなので見つける
+                    val getMethod = tagClass.staticFunctions.singleOrNull { it.name == "get" }
 
-                        if (getMethod == null) {
-                            // get メソッドが見つからなかった
-                            Log.w("tag", "$techName has't get method.")
-                            return@map null
-                        }
-
-                        // インスタンス化 TagClass.get(tag)
-                        val instance = getMethod.call(tag)
-
-                        if (instance == null) {
-                            // インスタンス生成ができなかった
-                            Log.w("tag", "Can't instantiate $techName by Clazz.get(tag).")
-                            return@map null
-                        }
-
-                        if (instance is TagTechnology) {
-                            // 生成されたインスタンスが TagTechnology を継承していた
-                            instance.connect()
-                            if (instance.isConnected) {
-                                val result = tag.allGetterResults()
-                                instance.close()
-
-                                val formattedData = StringBuilder()
-                                for (entry in result.entries) {
-                                    formattedData.append("◇ ${entry.key}\n").append("${entry.value
-                                            ?: "-"} \n")
-                                }
-                                NfcEntity(techName, formattedData.toString())
-                            } else {
-                                Log.w("tag", "Can't connect to $techName.")
-                                return@map null
-                            }
-                        } else {
-                            // 生成されたインスタンスが TagTechnology を継承していなかった
-                            Log.w("tag", "$techName type is not TagTechnology.")
-                            return@map null
-                        }
+                    if (getMethod == null) {
+                        // get メソッドが見つからなかった
+                        Log.w("tag", "$techName has't get method.")
+                        return@map null
                     }
-                    .filter { it != null }
-                    .mapNotNull { it }
+
+                    // インスタンス化 TagClass.get(tag)
+                    val instance = getMethod.call(tag)
+
+                    if (instance == null) {
+                        // インスタンス生成ができなかった
+                        Log.w("tag", "Can't instantiate $techName by Clazz.get(tag).")
+                        return@map null
+                    }
+
+                    if (instance is TagTechnology) {
+                        // 生成されたインスタンスが TagTechnology を継承していた
+                        instance.connect()
+                        if (instance.isConnected) {
+                            val result = tag.allGetterResults()
+                            instance.close()
+
+                            val formattedData = StringBuilder()
+                            for (entry in result.entries) {
+                                formattedData.append("◇ ${entry.key}\n").append(
+                                    "${
+                                        entry.value
+                                            ?: "-"
+                                    } \n"
+                                )
+                            }
+                            NfcEntity(techName, formattedData.toString())
+                        } else {
+                            Log.w("tag", "Can't connect to $techName.")
+                            return@map null
+                        }
+                    } else {
+                        // 生成されたインスタンスが TagTechnology を継承していなかった
+                        Log.w("tag", "$techName type is not TagTechnology.")
+                        return@map null
+                    }
+                }
+                .filterNotNull()
+                .map { it }
             readStatus = ReadStatus.SUCCESS(entities)
             NfcAdapter.ACTION_TRANSACTION_DETECTED
         } catch (e: Throwable) {

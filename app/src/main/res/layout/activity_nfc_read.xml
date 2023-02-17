@@ -50,7 +50,6 @@
                     android:gravity="center"
                     android:padding="8dp"
                     android:text="@{viewModel.message}"
-                    android:textColor="@android:color/black"
                     android:textSize="24sp" />
             </LinearLayout>
         </FrameLayout>

@@ -16,9 +16,14 @@ class NfcReadResultListAdapter : RecyclerView.Adapter<RecyclerView.ViewHolder>()
         }
 
     override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): RecyclerView.ViewHolder {
-        val view = LayoutInflater.from(parent.context).inflate(R.layout.item_nfc_list_content, parent, false)
-
-        return ContentViewHolder(view)
+        return ContentViewHolder(
+            LayoutInflater.from(parent.context)
+                .inflate(
+                    R.layout.item_nfc_list_content,
+                    parent,
+                    false
+                )
+        )
     }
 
     override fun onBindViewHolder(holder: RecyclerView.ViewHolder, position: Int) {

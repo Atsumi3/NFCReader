@@ -3,10 +3,10 @@ package info.nukoneko.android.nfcreader.ui.nfcread
 import android.app.PendingIntent
 import android.content.Intent
 import android.nfc.NfcAdapter
-import android.os.Build
 import android.os.Bundle
 import androidx.activity.viewModels
 import androidx.appcompat.app.AppCompatActivity
+import androidx.core.app.PendingIntentCompat
 import androidx.databinding.DataBindingUtil
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
@@ -30,14 +30,9 @@ class NfcReadActivity : AppCompatActivity() {
     private val pendingIntent: PendingIntent by lazy {
         val intent = Intent(this, this.javaClass)
             .addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP)
-        // NFC foreground dispatch needs the system to inject the Tag extra into
-        // the Intent, so the PendingIntent must be MUTABLE on API 31+.
-        val flags = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            PendingIntent.FLAG_MUTABLE
-        } else {
-            0
-        }
-        PendingIntent.getActivity(this, 0, intent, flags)
+        // Foreground dispatch needs the system to inject the Tag extra into the
+        // Intent, so the PendingIntent must be mutable on API 31+.
+        PendingIntentCompat.getActivity(this, 0, intent, 0, true)
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {

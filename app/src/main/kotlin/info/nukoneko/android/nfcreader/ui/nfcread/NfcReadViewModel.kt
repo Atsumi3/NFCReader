@@ -11,6 +11,7 @@ import androidx.core.content.IntentCompat
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.LiveData
 import androidx.lifecycle.MutableLiveData
+import androidx.lifecycle.viewModelScope
 import info.nukoneko.android.nfcreader.R
 import info.nukoneko.android.nfcreader.extensions.allGetterResults
 import info.nukoneko.android.nfcreader.extensions.mutableLiveDataOf
@@ -18,6 +19,9 @@ import info.nukoneko.android.nfcreader.model.entity.NfcEntity
 import info.nukoneko.android.nfcreader.model.entity.ReadStatus
 import info.nukoneko.android.nfcreader.model.event.VMEvent
 import info.nukoneko.android.nfcreader.model.event.postValue
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.text.DateFormat
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -106,10 +110,6 @@ class NfcReadViewModel(application: Application) : AndroidViewModel(application)
             readStatus = ReadStatus.FAILED(RuntimeException(messageIntentIsNotSupported))
             return
         }
-        resolveIntent(intent)
-    }
-
-    private fun resolveIntent(intent: Intent) {
         val tag: Tag? = IntentCompat.getParcelableExtra(
             intent,
             NfcAdapter.EXTRA_TAG,
@@ -119,16 +119,18 @@ class NfcReadViewModel(application: Application) : AndroidViewModel(application)
             readStatus = ReadStatus.FAILED(RuntimeException(messageIntentIsNotSupported))
             return
         }
-
         readStatus = ReadStatus.READING()
-
-        try {
-            val tagResult = tag.allGetterResults()
-            val entities: List<NfcEntity> = tag.techList.distinct()
-                .mapNotNull { techName -> readTech(tag, techName, tagResult) }
-            readStatus = ReadStatus.SUCCESS(entities)
-        } catch (e: Throwable) {
-            readStatus = ReadStatus.FAILED(e)
+        // TagTechnology#connect is blocking I/O — keep it off the main thread.
+        viewModelScope.launch {
+            readStatus = try {
+                val entities = withContext(Dispatchers.IO) {
+                    val tagResult = tag.allGetterResults()
+                    tag.techList.distinct().mapNotNull { readTech(tag, it, tagResult) }
+                }
+                ReadStatus.SUCCESS(entities)
+            } catch (e: Throwable) {
+                ReadStatus.FAILED(e)
+            }
         }
     }
 

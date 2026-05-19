@@ -33,9 +33,12 @@ private fun Any?.formatForDisplay(): String? = when (this) {
     is IntArray -> toHexString()
     is LongArray -> toHexString()
     is BooleanArray -> joinToString(" ") { it.toString() }
-    is Array<*> -> joinToString(" ") { it.formatForDisplay() ?: "null" }
-    is Iterable<*> -> joinToString(" ") { it.formatForDisplay() ?: "null" }
+    is Array<*> -> asIterable().formatElements()
+    is Iterable<*> -> formatElements()
     is Boolean -> toString()
     is String -> this
     else -> toString()
 }
+
+private fun Iterable<*>.formatElements(): String =
+    joinToString(" ") { it.formatForDisplay() ?: "null" }

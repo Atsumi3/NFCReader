@@ -7,6 +7,7 @@ import android.nfc.Tag
 import android.nfc.tech.TagTechnology
 import android.util.Log
 import android.view.View
+import androidx.core.content.IntentCompat
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.LiveData
 import androidx.lifecycle.MutableLiveData
@@ -19,7 +20,8 @@ import info.nukoneko.android.nfcreader.model.event.VMEvent
 import info.nukoneko.android.nfcreader.model.event.postValue
 import java.text.DateFormat
 import java.text.SimpleDateFormat
-import java.util.*
+import java.util.Date
+import java.util.Locale
 import kotlin.reflect.full.staticFunctions
 
 class NfcReadViewModel(application: Application) : AndroidViewModel(application) {
@@ -96,19 +98,23 @@ class NfcReadViewModel(application: Application) : AndroidViewModel(application)
         }
 
     fun onNewIntent(intent: Intent?) {
-        if (!nfcDisabled) {
-            if (intent != null) {
-                resolveIntent(intent)
-            } else {
-                readStatus = ReadStatus.FAILED(RuntimeException(messageIntentIsNotSupported))
-            }
-        } else {
+        if (nfcDisabled) {
             readStatus = ReadStatus.FAILED(RuntimeException(messageNfcDisabled))
+            return
         }
+        if (intent == null) {
+            readStatus = ReadStatus.FAILED(RuntimeException(messageIntentIsNotSupported))
+            return
+        }
+        resolveIntent(intent)
     }
 
     private fun resolveIntent(intent: Intent) {
-        val tag: Tag? = intent.getParcelableExtra(NfcAdapter.EXTRA_TAG)
+        val tag: Tag? = IntentCompat.getParcelableExtra(
+            intent,
+            NfcAdapter.EXTRA_TAG,
+            Tag::class.java
+        )
         if (tag == null) {
             readStatus = ReadStatus.FAILED(RuntimeException(messageIntentIsNotSupported))
             return
@@ -117,62 +123,69 @@ class NfcReadViewModel(application: Application) : AndroidViewModel(application)
         readStatus = ReadStatus.READING()
 
         try {
+            val tagResult = tag.allGetterResults()
             val entities: List<NfcEntity> = tag.techList.distinct()
-                    .map { techName ->
-                        // 読み込まれたNFCタグのクラス情報を取得
-                        val tagClass = Class.forName(techName).kotlin
-
-                        // NFCタグクラスには static function で get が生えているはずなので見つける
-                        val getMethod = tagClass.staticFunctions.singleOrNull { it.name == "get" }
-
-                        if (getMethod == null) {
-                            // get メソッドが見つからなかった
-                            Log.w("tag", "$techName has't get method.")
-                            return@map null
-                        }
-
-                        // インスタンス化 TagClass.get(tag)
-                        val instance = getMethod.call(tag)
-
-                        if (instance == null) {
-                            // インスタンス生成ができなかった
-                            Log.w("tag", "Can't instantiate $techName by Clazz.get(tag).")
-                            return@map null
-                        }
-
-                        if (instance is TagTechnology) {
-                            // 生成されたインスタンスが TagTechnology を継承していた
-                            instance.connect()
-                            if (instance.isConnected) {
-                                val result = tag.allGetterResults()
-                                instance.close()
-
-                                val formattedData = StringBuilder()
-                                for (entry in result.entries) {
-                                    formattedData.append("◇ ${entry.key}\n").append("${entry.value
-                                            ?: "-"} \n")
-                                }
-                                NfcEntity(techName, formattedData.toString())
-                            } else {
-                                Log.w("tag", "Can't connect to $techName.")
-                                return@map null
-                            }
-                        } else {
-                            // 生成されたインスタンスが TagTechnology を継承していなかった
-                            Log.w("tag", "$techName type is not TagTechnology.")
-                            return@map null
-                        }
-                    }
-                    .filter { it != null }
-                    .mapNotNull { it }
+                .mapNotNull { techName -> readTech(tag, techName, tagResult) }
             readStatus = ReadStatus.SUCCESS(entities)
-            NfcAdapter.ACTION_TRANSACTION_DETECTED
         } catch (e: Throwable) {
             readStatus = ReadStatus.FAILED(e)
         }
     }
 
+    private fun readTech(tag: Tag, techName: String, tagResult: Map<String, String?>): NfcEntity? {
+        val tagClass = try {
+            Class.forName(techName).kotlin
+        } catch (t: Throwable) {
+            Log.w(LOG_TAG, "Cannot load class $techName.", t)
+            return null
+        }
+
+        val getMethod = tagClass.staticFunctions.singleOrNull { it.name == "get" }
+        if (getMethod == null) {
+            Log.w(LOG_TAG, "$techName has no static get method.")
+            return null
+        }
+
+        val instance = try {
+            getMethod.call(tag)
+        } catch (t: Throwable) {
+            Log.w(LOG_TAG, "Cannot instantiate $techName via get(tag).", t)
+            return null
+        }
+
+        if (instance !is TagTechnology) {
+            Log.w(LOG_TAG, "$techName is not a TagTechnology.")
+            return null
+        }
+
+        return try {
+            instance.connect()
+            if (!instance.isConnected) {
+                Log.w(LOG_TAG, "Cannot connect to $techName.")
+                return null
+            }
+            val techResult = instance.allGetterResults()
+            val formattedData = buildString {
+                for ((key, value) in tagResult) {
+                    append("◇ Tag.$key\n")
+                    append("${value ?: "-"}\n")
+                }
+                for ((key, value) in techResult) {
+                    append("◇ $key\n")
+                    append("${value ?: "-"}\n")
+                }
+            }
+            NfcEntity(techName, formattedData)
+        } catch (t: Throwable) {
+            Log.w(LOG_TAG, "Failed to read $techName.", t)
+            null
+        } finally {
+            runCatching { instance.close() }
+        }
+    }
+
     companion object {
         private const val DATE_FORMAT = "yyyy-MM-dd HH:mm:ss.SSS"
+        private const val LOG_TAG = "NfcReadViewModel"
     }
 }

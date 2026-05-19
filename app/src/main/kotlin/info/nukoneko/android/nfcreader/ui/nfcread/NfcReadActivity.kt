@@ -3,10 +3,11 @@ package info.nukoneko.android.nfcreader.ui.nfcread
 import android.app.PendingIntent
 import android.content.Intent
 import android.nfc.NfcAdapter
+import android.os.Build
 import android.os.Bundle
+import androidx.activity.viewModels
 import androidx.appcompat.app.AppCompatActivity
 import androidx.databinding.DataBindingUtil
-import androidx.lifecycle.ViewModelProviders
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import info.nukoneko.android.nfcreader.R
@@ -16,9 +17,7 @@ import info.nukoneko.android.nfcreader.model.event.safetyObserve
 class NfcReadActivity : AppCompatActivity() {
     private lateinit var binding: ActivityNfcReadBinding
 
-    private val viewModel: NfcReadViewModel by lazy {
-        ViewModelProviders.of(this)[NfcReadViewModel::class.java]
-    }
+    private val viewModel: NfcReadViewModel by viewModels()
 
     private val adapter: NfcReadResultListAdapter by lazy {
         NfcReadResultListAdapter()
@@ -29,8 +28,16 @@ class NfcReadActivity : AppCompatActivity() {
     }
 
     private val pendingIntent: PendingIntent by lazy {
-        PendingIntent.getActivity(this, 0,
-                Intent(this, this.javaClass).addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP), 0)
+        val intent = Intent(this, this.javaClass)
+            .addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP)
+        // NFC foreground dispatch needs the system to inject the Tag extra into
+        // the Intent, so the PendingIntent must be MUTABLE on API 31+.
+        val flags = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            PendingIntent.FLAG_MUTABLE
+        } else {
+            0
+        }
+        PendingIntent.getActivity(this, 0, intent, flags)
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -53,17 +60,18 @@ class NfcReadActivity : AppCompatActivity() {
         list.layoutManager = LinearLayoutManager(this)
     }
 
-    override fun onNewIntent(intent: Intent?) {
+    override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         viewModel.onNewIntent(intent)
     }
 
     override fun onResume() {
         super.onResume()
-        if (nfcAdapter == null) {
+        val adapter = nfcAdapter
+        if (adapter == null) {
             viewModel.onNfcDisabled()
         } else {
-            nfcAdapter?.enableForegroundDispatch(this, pendingIntent, null, null)
+            adapter.enableForegroundDispatch(this, pendingIntent, null, null)
         }
     }
 

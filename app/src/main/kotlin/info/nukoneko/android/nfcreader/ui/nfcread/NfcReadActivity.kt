@@ -12,7 +12,7 @@ import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import info.nukoneko.android.nfcreader.R
 import info.nukoneko.android.nfcreader.databinding.ActivityNfcReadBinding
-import info.nukoneko.android.nfcreader.model.event.safetyObserve
+import info.nukoneko.android.nfcreader.model.entity.ReadStatus
 
 class NfcReadActivity : AppCompatActivity() {
     private lateinit var binding: ActivityNfcReadBinding
@@ -45,8 +45,10 @@ class NfcReadActivity : AppCompatActivity() {
     }
 
     private fun setupEventSubscriber() {
-        viewModel.data.safetyObserve(this) { data ->
-            adapter.data = data
+        viewModel.state.observe(this) { status ->
+            if (status is ReadStatus.Success) {
+                adapter.data = status.entities
+            }
         }
     }
 

@@ -11,14 +11,13 @@ import androidx.core.content.IntentCompat
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.LiveData
 import androidx.lifecycle.MutableLiveData
+import androidx.lifecycle.distinctUntilChanged
+import androidx.lifecycle.map
 import androidx.lifecycle.viewModelScope
 import info.nukoneko.android.nfcreader.R
 import info.nukoneko.android.nfcreader.extensions.allGetterResults
-import info.nukoneko.android.nfcreader.extensions.mutableLiveDataOf
 import info.nukoneko.android.nfcreader.model.entity.NfcEntity
 import info.nukoneko.android.nfcreader.model.entity.ReadStatus
-import info.nukoneko.android.nfcreader.model.event.VMEvent
-import info.nukoneko.android.nfcreader.model.event.postValue
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -29,161 +28,129 @@ import java.util.Locale
 import kotlin.reflect.full.staticFunctions
 
 class NfcReadViewModel(application: Application) : AndroidViewModel(application) {
-    private val messagePleaseHoldUpDevice = application.getString(R.string.please_hold_up_device)
-    private val messageNfcDisabled = application.getString(R.string.nfc_disabled)
-    private val messageReadableNfcIsNotFound = application.getString(R.string.readable_nfc_is_not_found)
-    private val messageIntentIsNotSupported = application.getString(R.string.intent_is_not_supported)
 
-    private var nfcDisabled = false
-    fun onNfcDisabled() {
-        readStatus = ReadStatus.FAILED(RuntimeException(messageNfcDisabled))
-        nfcDisabled = true
-    }
+    private val messagePleaseHoldUpDevice =
+        application.getString(R.string.please_hold_up_device)
+    private val messageNfcDisabled =
+        application.getString(R.string.nfc_disabled)
+    private val messageReadableNfcIsNotFound =
+        application.getString(R.string.readable_nfc_is_not_found)
+    private val messageIntentIsNotSupported =
+        application.getString(R.string.intent_is_not_supported)
 
     private val dateFormat: DateFormat by lazy {
         SimpleDateFormat(DATE_FORMAT, Locale.getDefault())
     }
 
-    private val _data: MutableLiveData<VMEvent<List<NfcEntity>>> = mutableLiveDataOf()
-    val data: LiveData<VMEvent<List<NfcEntity>>> = _data
+    private val _state = MutableLiveData<ReadStatus>(ReadStatus.Idle)
+    val state: LiveData<ReadStatus> = _state
 
-    private val _readTime: MutableLiveData<String> = mutableLiveDataOf("")
-    val readTime: LiveData<String> = _readTime
+    val readTime: LiveData<String> = _state
+        .map { status -> if (status is ReadStatus.Reading) dateFormat.format(Date()) else "" }
+        .distinctUntilChanged()
 
-    private val _readResultListVisibility: MutableLiveData<Int> = mutableLiveDataOf(View.GONE)
-    val readResultListVisibility: LiveData<Int> = _readResultListVisibility
+    val readResultListVisibility: LiveData<Int> = _state
+        .map { status -> if (status is ReadStatus.Success && status.entities.isNotEmpty()) View.VISIBLE else View.GONE }
+        .distinctUntilChanged()
 
-    private val _progressViewVisibility: MutableLiveData<Int> = mutableLiveDataOf(View.GONE)
-    val progressViewVisibility: LiveData<Int> = _progressViewVisibility
+    val progressViewVisibility: LiveData<Int> = _state
+        .map { status -> if (status is ReadStatus.Reading) View.VISIBLE else View.GONE }
+        .distinctUntilChanged()
 
-    private val _messageViewVisibility: MutableLiveData<Int> = mutableLiveDataOf(View.VISIBLE)
-    val messageViewVisibility: LiveData<Int> = _messageViewVisibility
+    val messageViewVisibility: LiveData<Int> = _state
+        .map { status -> if (status.shouldShowMessage()) View.VISIBLE else View.GONE }
+        .distinctUntilChanged()
 
-    private val _message: MutableLiveData<String> = mutableLiveDataOf(messagePleaseHoldUpDevice)
-    val message: LiveData<String> = _message
+    val message: LiveData<String> = _state
+        .map { status -> status.toMessage() }
+        .distinctUntilChanged()
 
-    private var readStatus: ReadStatus<List<NfcEntity>> = ReadStatus.IDLE()
-        set(value) {
-            field = value
-            when (value) {
-                is ReadStatus.IDLE -> {
-                    _readResultListVisibility.postValue(View.GONE)
-                    _messageViewVisibility.postValue(View.VISIBLE)
-                    _message.postValue(messagePleaseHoldUpDevice)
-                    _progressViewVisibility.postValue(View.GONE)
-                }
-                is ReadStatus.READING -> {
-                    _readTime.postValue(dateFormat.format(Date()))
-                    _data.postValue(emptyList())
-                    _readResultListVisibility.postValue(View.GONE)
-                    _messageViewVisibility.postValue(View.GONE)
-                    _message.postValue("")
-                    _progressViewVisibility.postValue(View.VISIBLE)
-                }
-                is ReadStatus.SUCCESS -> {
-                    _data.postValue(value.value)
-                    if (value.value.isEmpty()) {
-                        _readResultListVisibility.postValue(View.GONE)
-                        _messageViewVisibility.postValue(View.VISIBLE)
-                        _message.postValue(messageReadableNfcIsNotFound)
-                    } else {
-                        _readResultListVisibility.postValue(View.VISIBLE)
-                        _messageViewVisibility.postValue(View.GONE)
-                    }
-                    _progressViewVisibility.postValue(View.GONE)
-                }
-                is ReadStatus.FAILED -> {
-                    _readResultListVisibility.postValue(View.GONE)
-                    _messageViewVisibility.postValue(View.VISIBLE)
-                    _message.postValue(value.error.localizedMessage)
-                    _progressViewVisibility.postValue(View.GONE)
-                }
-            }
-        }
+    fun onNfcDisabled() {
+        _state.value = ReadStatus.Failure.NfcDisabled
+    }
 
     fun onNewIntent(intent: Intent?) {
-        if (nfcDisabled) {
-            readStatus = ReadStatus.FAILED(RuntimeException(messageNfcDisabled))
-            return
+        if (_state.value == ReadStatus.Failure.NfcDisabled) return
+
+        val tag = intent?.let {
+            IntentCompat.getParcelableExtra(it, NfcAdapter.EXTRA_TAG, Tag::class.java)
         }
-        if (intent == null) {
-            readStatus = ReadStatus.FAILED(RuntimeException(messageIntentIsNotSupported))
-            return
-        }
-        val tag: Tag? = IntentCompat.getParcelableExtra(
-            intent,
-            NfcAdapter.EXTRA_TAG,
-            Tag::class.java
-        )
         if (tag == null) {
-            readStatus = ReadStatus.FAILED(RuntimeException(messageIntentIsNotSupported))
+            _state.value = ReadStatus.Failure.IntentUnsupported
             return
         }
-        readStatus = ReadStatus.READING()
+
+        _state.value = ReadStatus.Reading
         // TagTechnology#connect is blocking I/O — keep it off the main thread.
         viewModelScope.launch {
-            readStatus = try {
-                val entities = withContext(Dispatchers.IO) {
-                    val tagResult = tag.allGetterResults()
-                    tag.techList.distinct().mapNotNull { readTech(tag, it, tagResult) }
-                }
-                ReadStatus.SUCCESS(entities)
-            } catch (e: Throwable) {
-                ReadStatus.FAILED(e)
+            val result = runCatching {
+                withContext(Dispatchers.IO) { readAllTechs(tag) }
             }
+            _state.value = result.fold(
+                onSuccess = { ReadStatus.Success(it) },
+                onFailure = { ReadStatus.Failure.Error(it) }
+            )
         }
     }
 
-    private fun readTech(tag: Tag, techName: String, tagResult: Map<String, String?>): NfcEntity? {
-        val tagClass = try {
-            Class.forName(techName).kotlin
-        } catch (t: Throwable) {
-            Log.w(LOG_TAG, "Cannot load class $techName.", t)
-            return null
-        }
+    private fun readAllTechs(tag: Tag): List<NfcEntity> {
+        val tagResult = tag.allGetterResults()
+        return tag.techList.distinct().mapNotNull { readTech(tag, it, tagResult) }
+    }
 
-        val getMethod = tagClass.staticFunctions.singleOrNull { it.name == "get" }
-        if (getMethod == null) {
-            Log.w(LOG_TAG, "$techName has no static get method.")
-            return null
+    private fun readTech(
+        tag: Tag,
+        techName: String,
+        tagResult: Map<String, String?>
+    ): NfcEntity? = runCatching {
+        val tagClass = Class.forName(techName).kotlin
+        val getMethod = tagClass.staticFunctions.firstOrNull { it.name == "get" }
+            ?: return@runCatching null
+        val instance = getMethod.call(tag) as? TagTechnology
+            ?: return@runCatching null
+        instance.use { tech ->
+            tech.connect()
+            if (!tech.isConnected) return@runCatching null
+            val techResult = tech.allGetterResults()
+            NfcEntity(techName, formatEntries(tagResult, techResult))
         }
+    }.onFailure { Log.w(LOG_TAG, "Failed to read $techName.", it) }
+        .getOrNull()
 
-        val instance = try {
-            getMethod.call(tag)
-        } catch (t: Throwable) {
-            Log.w(LOG_TAG, "Cannot instantiate $techName via get(tag).", t)
-            return null
-        }
+    private fun formatEntries(
+        tagResult: Map<String, String?>,
+        techResult: Map<String, String?>
+    ): String = buildString {
+        appendSection(tagResult, prefix = "Tag")
+        appendSection(techResult)
+    }
 
-        if (instance !is TagTechnology) {
-            Log.w(LOG_TAG, "$techName is not a TagTechnology.")
-            return null
+    private fun StringBuilder.appendSection(
+        entries: Map<String, String?>,
+        prefix: String = ""
+    ) {
+        val labelPrefix = if (prefix.isEmpty()) "" else "$prefix."
+        for ((key, value) in entries) {
+            appendLine("◇ $labelPrefix$key")
+            appendLine(value ?: "-")
         }
+    }
 
-        return try {
-            instance.connect()
-            if (!instance.isConnected) {
-                Log.w(LOG_TAG, "Cannot connect to $techName.")
-                return null
-            }
-            val techResult = instance.allGetterResults()
-            val formattedData = buildString {
-                for ((key, value) in tagResult) {
-                    append("◇ Tag.$key\n")
-                    append("${value ?: "-"}\n")
-                }
-                for ((key, value) in techResult) {
-                    append("◇ $key\n")
-                    append("${value ?: "-"}\n")
-                }
-            }
-            NfcEntity(techName, formattedData)
-        } catch (t: Throwable) {
-            Log.w(LOG_TAG, "Failed to read $techName.", t)
-            null
-        } finally {
-            runCatching { instance.close() }
-        }
+    private fun ReadStatus.shouldShowMessage(): Boolean = when (this) {
+        ReadStatus.Idle -> true
+        ReadStatus.Reading -> false
+        is ReadStatus.Success -> entities.isEmpty()
+        is ReadStatus.Failure -> true
+    }
+
+    private fun ReadStatus.toMessage(): String = when (this) {
+        ReadStatus.Idle -> messagePleaseHoldUpDevice
+        ReadStatus.Reading -> ""
+        is ReadStatus.Success ->
+            if (entities.isEmpty()) messageReadableNfcIsNotFound else ""
+        ReadStatus.Failure.NfcDisabled -> messageNfcDisabled
+        ReadStatus.Failure.IntentUnsupported -> messageIntentIsNotSupported
+        is ReadStatus.Failure.Error -> cause.localizedMessage.orEmpty()
     }
 
     companion object {

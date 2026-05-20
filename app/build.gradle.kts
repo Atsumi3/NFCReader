@@ -1,22 +1,25 @@
-import dependencies.Dep
-import dependencies.Versions
-
 plugins {
-    id("com.android.application")
-    id("org.jetbrains.kotlin.android")
-    id("org.jetbrains.kotlin.plugin.compose")
+    alias(libs.plugins.android.application)
+    alias(libs.plugins.kotlin.android)
+    alias(libs.plugins.kotlin.compose)
 }
 
 android {
     namespace = "info.nukoneko.android.nfcreader"
-    compileSdk = Versions.androidCompileSdkVersion
+    compileSdk = 36
 
     defaultConfig {
         applicationId = "info.nukoneko.android.nfcreader"
-        minSdk = Versions.androidMinSdkVersion
-        targetSdk = Versions.androidTargetSdkVersion
-        versionCode = Versions.androidVersionCode
-        versionName = Versions.androidVersionName
+        minSdk = 21
+        targetSdk = 36
+
+        val versionMajor = 2
+        val versionMinor = 0
+        val versionPatch = 0
+        val versionOffset = 0
+        versionCode = (versionMajor * 10000 + versionMinor * 100 + versionPatch) * 100 + versionOffset
+        versionName = "$versionMajor.$versionMinor.$versionPatch"
+
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
@@ -45,7 +48,7 @@ android {
     }
 
     kotlinOptions {
-        jvmTarget = Versions.jvmTarget
+        jvmTarget = "17"
     }
 
     sourceSets {
@@ -56,22 +59,22 @@ android {
 }
 
 dependencies {
-    implementation(Dep.Kotlin.reflect)
-    implementation(Dep.AndroidX.coreKtx)
-    implementation(Dep.AndroidX.activityCompose)
-    implementation(Dep.AndroidX.lifecycleViewModelCompose)
-    implementation(Dep.AndroidX.lifecycleRuntimeCompose)
+    implementation(libs.kotlin.reflect)
+    implementation(libs.androidx.core.ktx)
+    implementation(libs.androidx.activity.compose)
+    implementation(libs.androidx.lifecycle.viewmodel.compose)
+    implementation(libs.androidx.lifecycle.runtime.compose)
 
-    implementation(platform(Dep.AndroidX.composeBom))
-    implementation(Dep.AndroidX.composeUi)
-    implementation(Dep.AndroidX.composeUiToolingPreview)
-    implementation(Dep.AndroidX.composeMaterial3)
-    debugImplementation(Dep.AndroidX.composeUiTooling)
+    implementation(platform(libs.androidx.compose.bom))
+    implementation(libs.androidx.compose.ui)
+    implementation(libs.androidx.compose.ui.tooling.preview)
+    implementation(libs.androidx.compose.material3)
+    debugImplementation(libs.androidx.compose.ui.tooling)
 
-    testImplementation(Dep.Test.junit)
-    testImplementation(Dep.Test.coroutinesTest)
+    testImplementation(libs.junit)
+    testImplementation(libs.kotlinx.coroutines.test)
 
-    androidTestImplementation(platform(Dep.AndroidX.composeBom))
-    androidTestImplementation(Dep.Test.testRunner)
-    androidTestImplementation(Dep.Test.espressoCore)
+    androidTestImplementation(platform(libs.androidx.compose.bom))
+    androidTestImplementation(libs.androidx.test.runner)
+    androidTestImplementation(libs.androidx.espresso.core)
 }

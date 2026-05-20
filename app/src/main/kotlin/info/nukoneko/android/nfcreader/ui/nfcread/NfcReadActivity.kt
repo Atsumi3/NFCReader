@@ -26,7 +26,8 @@ class NfcReadActivity : ComponentActivity() {
             .addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP)
         // Foreground dispatch needs the system to inject the Tag extra into the
         // Intent, so the PendingIntent must be mutable on API 31+.
-        PendingIntentCompat.getActivity(this, 0, intent, 0, true)
+        // Non-null is guaranteed: getActivity only returns null with FLAG_NO_CREATE.
+        PendingIntentCompat.getActivity(this, 0, intent, 0, true)!!
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {

@@ -54,4 +54,21 @@ class ByteArrayExtensionsTest {
         val arr = longArrayOf(0xFFL, 0x1234567890ABCDEFL)
         assertEquals("00000000000000FF 1234567890ABCDEF", arr.toHexString())
     }
+
+    @Test
+    fun toHexStringCompactHasNoSeparators() {
+        assertEquals("FF0050", byteArrayOf(0xFF.toByte(), 0x00, 0x50).toHexStringCompact())
+    }
+
+    @Test
+    fun readUIntLittleEndian() {
+        assertEquals(1500L, byteArrayOf(0xDC.toByte(), 0x05).readUIntLe(0, 2))
+        assertEquals(0x04030201L, byteArrayOf(0x01, 0x02, 0x03, 0x04).readUIntLe())
+    }
+
+    @Test
+    fun readUIntBigEndian() {
+        assertEquals(1500L, byteArrayOf(0x05, 0xDC.toByte()).readUIntBe(0, 2))
+        assertEquals(42L, byteArrayOf(0x00, 0x00, 0x2A).readUIntBe(0, 3))
+    }
 }

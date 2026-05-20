@@ -12,6 +12,7 @@ import info.nukoneko.android.nfcreader.extensions.allGetterResults
 import info.nukoneko.android.nfcreader.model.entity.NfcEntity
 import info.nukoneko.android.nfcreader.model.entity.NfcField
 import info.nukoneko.android.nfcreader.model.entity.ReadStatus
+import info.nukoneko.android.nfcreader.model.reader.TechReaders
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -79,7 +80,17 @@ class NfcReadViewModel : ViewModel() {
         instance.use { tech ->
             tech.connect()
             if (!tech.isConnected) return@runCatching null
-            NfcEntity(techName, tagFields + tech.allGetterResults().toFields())
+            val genericFields = tech.allGetterResults().toFields()
+            // Generic getter dump first; then append protocol-level content if a
+            // tag-type-specific reader exists. A reader failure must not drop the
+            // generic fields, so it is caught and surfaced as one field.
+            val readerFields = TechReaders.forTech(techName)?.let { reader ->
+                runCatching { reader.read(tech) }.getOrElse {
+                    Log.w(LOG_TAG, "Specialized read failed for $techName.", it)
+                    listOf(NfcField("Read.error", it.message ?: it::class.simpleName.orEmpty()))
+                }
+            }.orEmpty()
+            NfcEntity(techName, tagFields + genericFields + readerFields)
         }
     }.onFailure { Log.w(LOG_TAG, "Failed to read $techName.", it) }
         .getOrNull()

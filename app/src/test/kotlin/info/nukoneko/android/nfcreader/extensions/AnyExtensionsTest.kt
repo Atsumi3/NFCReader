@@ -20,6 +20,9 @@ class AnyExtensionsTest {
         fun getNothing(): String? = null
         fun getWithArgument(value: Int): Int = value
         fun compute(): Int = 0
+        fun isReady(): Boolean = true
+        fun canWrite(): Boolean = false
+        fun issueCount(): Int = 7
     }
 
     private val results = Sample().allGetterResults()
@@ -57,5 +60,18 @@ class AnyExtensionsTest {
     @Test
     fun nonGetterMethodsAreExcluded() {
         assertFalse(results.containsKey("compute"))
+    }
+
+    @Test
+    fun isAndCanGettersAreIncludedWithPredicateNames() {
+        assertEquals("true", results["isReady"])
+        assertEquals("false", results["canWrite"])
+    }
+
+    @Test
+    fun prefixWithoutUpperCaseIsNotAGetter() {
+        // "issueCount" starts with "is" but the next char is lower-case.
+        assertFalse(results.containsKey("issueCount"))
+        assertFalse(results.containsKey("sueCount"))
     }
 }

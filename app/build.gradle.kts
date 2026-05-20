@@ -4,6 +4,16 @@ plugins {
     alias(libs.plugins.kotlin.compose)
 }
 
+// Version numbers live in gradle.properties so CI can bump them mechanically.
+val versionMajor = (property("VERSION_MAJOR") as String).toInt()
+val versionMinor = (property("VERSION_MINOR") as String).toInt()
+val versionPatch = (property("VERSION_PATCH") as String).toInt()
+val versionOffset = (property("VERSION_OFFSET") as String).toInt()
+
+// Release signing is configured only when the keystore env vars are present
+// (i.e. on CI); local builds fall back to an unsigned release.
+val releaseKeystore: String? = System.getenv("RELEASE_KEYSTORE_FILE")
+
 android {
     namespace = "info.nukoneko.android.nfcreader"
     compileSdk = 36
@@ -12,15 +22,21 @@ android {
         applicationId = "info.nukoneko.android.nfcreader"
         minSdk = 21
         targetSdk = 36
-
-        val versionMajor = 2
-        val versionMinor = 0
-        val versionPatch = 0
-        val versionOffset = 0
         versionCode = (versionMajor * 10000 + versionMinor * 100 + versionPatch) * 100 + versionOffset
         versionName = "$versionMajor.$versionMinor.$versionPatch"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+    }
+
+    signingConfigs {
+        if (releaseKeystore != null) {
+            create("release") {
+                storeFile = file(releaseKeystore)
+                storePassword = System.getenv("RELEASE_KEYSTORE_PASSWORD")
+                keyAlias = System.getenv("RELEASE_KEY_ALIAS")
+                keyPassword = System.getenv("RELEASE_KEY_PASSWORD")
+            }
+        }
     }
 
     buildTypes {
@@ -31,6 +47,7 @@ android {
         getByName("release") {
             isMinifyEnabled = true
             isShrinkResources = true
+            signingConfig = signingConfigs.findByName("release")
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"

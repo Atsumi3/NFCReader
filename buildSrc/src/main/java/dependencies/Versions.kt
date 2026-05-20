@@ -16,6 +16,7 @@ object Versions {
 
     const val jvmTarget = "17"
 
-    const val androidGradlePluginVersion = "8.9.1"
+    const val androidGradlePluginVersion = "8.11.1"
     const val kotlinVersion = "2.1.0"
+    const val composeBomVersion = "2024.12.01"
 }

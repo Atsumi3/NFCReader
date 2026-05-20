@@ -4,7 +4,7 @@ import dependencies.Versions
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
-    id("org.jetbrains.kotlin.kapt")
+    id("org.jetbrains.kotlin.plugin.compose")
 }
 
 android {
@@ -36,7 +36,7 @@ android {
     }
 
     buildFeatures {
-        dataBinding = true
+        compose = true
     }
 
     compileOptions {
@@ -48,41 +48,30 @@ android {
         jvmTarget = Versions.jvmTarget
     }
 
-    testOptions {
-        unitTests {
-            isIncludeAndroidResources = true
-        }
-    }
-
     sourceSets {
-        getByName("main") {
-            java.srcDirs("src/main/kotlin")
-        }
-        getByName("androidTest") {
-            java.srcDirs("src/androidTest/kotlin", "src/sharedTest/java", "src/sharedTest/kotlin")
-            resources.srcDirs("src/sharedTest/resources")
-        }
-        getByName("test") {
-            java.srcDirs("src/test/kotlin", "src/sharedTest/java", "src/sharedTest/kotlin")
-            resources.srcDirs("src/sharedTest/resources")
-        }
+        getByName("main") { java.srcDirs("src/main/kotlin") }
+        getByName("test") { java.srcDirs("src/test/kotlin") }
+        getByName("androidTest") { java.srcDirs("src/androidTest/kotlin") }
     }
 }
 
 dependencies {
     implementation(Dep.Kotlin.reflect)
-    implementation(Dep.AndroidX.appCompat)
-    implementation(Dep.AndroidX.recyclerView)
-    implementation(Dep.AndroidX.design)
     implementation(Dep.AndroidX.coreKtx)
-    implementation(Dep.AndroidX.activityKtx)
-    implementation(Dep.AndroidX.lifecycleViewModel)
-    implementation(Dep.AndroidX.lifecycleLiveData)
+    implementation(Dep.AndroidX.activityCompose)
+    implementation(Dep.AndroidX.lifecycleViewModelCompose)
+    implementation(Dep.AndroidX.lifecycleRuntimeCompose)
+
+    implementation(platform(Dep.AndroidX.composeBom))
+    implementation(Dep.AndroidX.composeUi)
+    implementation(Dep.AndroidX.composeUiToolingPreview)
+    implementation(Dep.AndroidX.composeMaterial3)
+    debugImplementation(Dep.AndroidX.composeUiTooling)
 
     testImplementation(Dep.Test.junit)
-    testImplementation(Dep.Test.robolectric)
-    testImplementation(Dep.Test.mockito)
+    testImplementation(Dep.Test.coroutinesTest)
 
+    androidTestImplementation(platform(Dep.AndroidX.composeBom))
     androidTestImplementation(Dep.Test.testRunner)
     androidTestImplementation(Dep.Test.espressoCore)
 }

@@ -2,27 +2,26 @@ package dependencies
 
 @Suppress("unused")
 object Dep {
-    object GradlePlugin {
-        const val android = "com.android.tools.build:gradle:${Versions.androidGradlePluginVersion}"
-        const val kotlin = "org.jetbrains.kotlin:kotlin-gradle-plugin:${Kotlin.version}"
-    }
-
     object Test {
         const val junit = "junit:junit:4.13.2"
         const val testRunner = "androidx.test:runner:1.6.2"
         const val espressoCore = "androidx.test.espresso:espresso-core:3.6.1"
-        const val robolectric = "org.robolectric:robolectric:4.14"
-        const val mockito = "org.mockito.kotlin:mockito-kotlin:5.4.0"
+        const val coroutinesTest = "org.jetbrains.kotlinx:kotlinx-coroutines-test:1.9.0"
     }
 
     object AndroidX {
-        const val appCompat = "androidx.appcompat:appcompat:1.7.0"
-        const val recyclerView = "androidx.recyclerview:recyclerview:1.3.2"
-        const val design = "com.google.android.material:material:1.12.0"
         const val coreKtx = "androidx.core:core-ktx:1.15.0"
-        const val activityKtx = "androidx.activity:activity-ktx:1.9.3"
-        const val lifecycleViewModel = "androidx.lifecycle:lifecycle-viewmodel-ktx:2.8.7"
-        const val lifecycleLiveData = "androidx.lifecycle:lifecycle-livedata-ktx:2.8.7"
+        const val activityCompose = "androidx.activity:activity-compose:1.9.3"
+        const val lifecycleViewModelCompose =
+            "androidx.lifecycle:lifecycle-viewmodel-compose:2.8.7"
+        const val lifecycleRuntimeCompose =
+            "androidx.lifecycle:lifecycle-runtime-compose:2.8.7"
+
+        const val composeBom = "androidx.compose:compose-bom:${Versions.composeBomVersion}"
+        const val composeUi = "androidx.compose.ui:ui"
+        const val composeUiToolingPreview = "androidx.compose.ui:ui-tooling-preview"
+        const val composeUiTooling = "androidx.compose.ui:ui-tooling"
+        const val composeMaterial3 = "androidx.compose.material3:material3"
     }
 
     object Kotlin {

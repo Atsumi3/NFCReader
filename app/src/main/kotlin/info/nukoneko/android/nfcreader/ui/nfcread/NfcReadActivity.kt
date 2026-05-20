@@ -4,31 +4,25 @@ import android.app.PendingIntent
 import android.content.Intent
 import android.nfc.NfcAdapter
 import android.os.Bundle
+import androidx.activity.ComponentActivity
+import androidx.activity.compose.setContent
+import androidx.activity.enableEdgeToEdge
 import androidx.activity.viewModels
-import androidx.appcompat.app.AppCompatActivity
+import androidx.compose.runtime.getValue
 import androidx.core.app.PendingIntentCompat
-import androidx.databinding.DataBindingUtil
-import androidx.recyclerview.widget.LinearLayoutManager
-import androidx.recyclerview.widget.RecyclerView
-import info.nukoneko.android.nfcreader.R
-import info.nukoneko.android.nfcreader.databinding.ActivityNfcReadBinding
-import info.nukoneko.android.nfcreader.model.entity.ReadStatus
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import info.nukoneko.android.nfcreader.ui.theme.NfcReaderTheme
 
-class NfcReadActivity : AppCompatActivity() {
-    private lateinit var binding: ActivityNfcReadBinding
+class NfcReadActivity : ComponentActivity() {
 
     private val viewModel: NfcReadViewModel by viewModels()
-
-    private val adapter: NfcReadResultListAdapter by lazy {
-        NfcReadResultListAdapter()
-    }
 
     private val nfcAdapter: NfcAdapter? by lazy {
         NfcAdapter.getDefaultAdapter(this)
     }
 
     private val pendingIntent: PendingIntent by lazy {
-        val intent = Intent(this, this.javaClass)
+        val intent = Intent(this, javaClass)
             .addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP)
         // Foreground dispatch needs the system to inject the Tag extra into the
         // Intent, so the PendingIntent must be mutable on API 31+.
@@ -37,24 +31,14 @@ class NfcReadActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        binding = DataBindingUtil.setContentView(this, R.layout.activity_nfc_read)
-        binding.lifecycleOwner = this
-        binding.viewModel = viewModel
-        setupList(binding.list)
-        setupEventSubscriber()
-    }
-
-    private fun setupEventSubscriber() {
-        viewModel.state.observe(this) { status ->
-            if (status is ReadStatus.Success) {
-                adapter.data = status.entities
+        enableEdgeToEdge()
+        setContent {
+            NfcReaderTheme {
+                val state by viewModel.state.collectAsStateWithLifecycle()
+                val readTime by viewModel.readTime.collectAsStateWithLifecycle()
+                NfcReadScreen(state = state, readTime = readTime)
             }
         }
-    }
-
-    private fun setupList(list: RecyclerView) {
-        list.adapter = adapter
-        list.layoutManager = LinearLayoutManager(this)
     }
 
     override fun onNewIntent(intent: Intent) {

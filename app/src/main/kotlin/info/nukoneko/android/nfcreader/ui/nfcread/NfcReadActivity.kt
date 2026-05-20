@@ -4,66 +4,56 @@ import android.app.PendingIntent
 import android.content.Intent
 import android.nfc.NfcAdapter
 import android.os.Bundle
-import androidx.appcompat.app.AppCompatActivity
-import androidx.databinding.DataBindingUtil
-import androidx.lifecycle.ViewModelProviders
-import androidx.recyclerview.widget.LinearLayoutManager
-import androidx.recyclerview.widget.RecyclerView
-import info.nukoneko.android.nfcreader.R
-import info.nukoneko.android.nfcreader.databinding.ActivityNfcReadBinding
-import info.nukoneko.android.nfcreader.model.event.safetyObserve
+import androidx.activity.ComponentActivity
+import androidx.activity.compose.setContent
+import androidx.activity.enableEdgeToEdge
+import androidx.activity.viewModels
+import androidx.compose.runtime.getValue
+import androidx.core.app.PendingIntentCompat
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import info.nukoneko.android.nfcreader.ui.theme.NfcReaderTheme
 
-class NfcReadActivity : AppCompatActivity() {
-    private lateinit var binding: ActivityNfcReadBinding
+class NfcReadActivity : ComponentActivity() {
 
-    private val viewModel: NfcReadViewModel by lazy {
-        ViewModelProviders.of(this)[NfcReadViewModel::class.java]
-    }
-
-    private val adapter: NfcReadResultListAdapter by lazy {
-        NfcReadResultListAdapter()
-    }
+    private val viewModel: NfcReadViewModel by viewModels()
 
     private val nfcAdapter: NfcAdapter? by lazy {
         NfcAdapter.getDefaultAdapter(this)
     }
 
     private val pendingIntent: PendingIntent by lazy {
-        PendingIntent.getActivity(this, 0,
-                Intent(this, this.javaClass).addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP), 0)
+        val intent = Intent(this, javaClass)
+            .addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP)
+        // Foreground dispatch needs the system to inject the Tag extra into the
+        // Intent, so the PendingIntent must be mutable on API 31+.
+        // Non-null is guaranteed: getActivity only returns null with FLAG_NO_CREATE.
+        PendingIntentCompat.getActivity(this, 0, intent, 0, true)!!
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        binding = DataBindingUtil.setContentView(this, R.layout.activity_nfc_read)
-        binding.lifecycleOwner = this
-        binding.viewModel = viewModel
-        setupList(binding.list)
-        setupEventSubscriber()
-    }
-
-    private fun setupEventSubscriber() {
-        viewModel.data.safetyObserve(this) { data ->
-            adapter.data = data
+        enableEdgeToEdge()
+        setContent {
+            NfcReaderTheme {
+                val state by viewModel.state.collectAsStateWithLifecycle()
+                val readTime by viewModel.readTime.collectAsStateWithLifecycle()
+                NfcReadScreen(state = state, readTime = readTime)
+            }
         }
     }
 
-    private fun setupList(list: RecyclerView) {
-        list.adapter = adapter
-        list.layoutManager = LinearLayoutManager(this)
-    }
-
-    override fun onNewIntent(intent: Intent?) {
+    override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         viewModel.onNewIntent(intent)
     }
 
     override fun onResume() {
         super.onResume()
-        if (nfcAdapter == null) {
+        val adapter = nfcAdapter
+        if (adapter == null) {
             viewModel.onNfcDisabled()
         } else {
-            nfcAdapter?.enableForegroundDispatch(this, pendingIntent, null, null)
+            adapter.enableForegroundDispatch(this, pendingIntent, null, null)
         }
     }
 

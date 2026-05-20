@@ -1,8 +1,12 @@
 package info.nukoneko.android.nfcreader.model.entity
 
-sealed class ReadStatus<T> {
-    class IDLE<T> : ReadStatus<T>()
-    class READING<T> : ReadStatus<T>()
-    data class SUCCESS<T>(val value: T) : ReadStatus<T>()
-    data class FAILED<T>(val error: Throwable) : ReadStatus<T>()
+sealed interface ReadStatus {
+    data object Idle : ReadStatus
+    data object Reading : ReadStatus
+    data class Success(val entities: List<NfcEntity>) : ReadStatus
+    sealed interface Failure : ReadStatus {
+        data object NfcDisabled : Failure
+        data object IntentUnsupported : Failure
+        data class Error(val cause: Throwable) : Failure
+    }
 }

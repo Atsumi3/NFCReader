@@ -34,3 +34,16 @@ jobs:
 
       - name: Check
         run: ./gradlew lintDebug testDebugUnitTest assembleDebug assembleRelease
+
+      - name: Upload test and lint diagnostics
+        if: failure()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: ci-failure-diagnostics
+          path: |
+            app/build/test-results/testDebugUnitTest/*.xml
+            app/build/reports/tests/testDebugUnitTest/**
+            app/build/reports/lint-results-debug.html
+            app/build/reports/lint-results-debug.xml
+          if-no-files-found: warn
+          retention-days: 7

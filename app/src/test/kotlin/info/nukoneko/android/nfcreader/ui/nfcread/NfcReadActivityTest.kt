@@ -2,6 +2,7 @@ package info.nukoneko.android.nfcreader.ui.nfcread
 
 import android.content.Intent
 import android.nfc.NfcAdapter
+import android.os.Build
 import android.os.Bundle
 import androidx.lifecycle.ViewModelProvider
 import info.nukoneko.android.nfcreader.model.entity.ReadStatus
@@ -11,10 +12,12 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.Robolectric
 import org.robolectric.RobolectricTestRunner
+import org.robolectric.annotation.Config
 import org.robolectric.android.controller.ActivityController
 import org.robolectric.shadows.ShadowNfcAdapter
 
 @RunWith(RobolectricTestRunner::class)
+@Config(sdk = [Build.VERSION_CODES.VANILLA_ICE_CREAM])
 class NfcReadActivityTest {
 
     @Test

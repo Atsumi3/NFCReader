@@ -124,7 +124,7 @@ class MifareClassicReader : TechReader {
                         context.checkpoint()
                         try {
                             context.reserveTransceive("MIFARE Classic Key B authentication")
-                            if (mfc.authenticateSectorWithKeyB(sector, candidate)) {
+                            if (mfc.authenticateKeyB(sector, candidate)) {
                                 context.reserveTransceive("MIFARE Classic block read")
                                 recovered = mfc.readBlock(block)
                                 if (recovered.size == 16) {

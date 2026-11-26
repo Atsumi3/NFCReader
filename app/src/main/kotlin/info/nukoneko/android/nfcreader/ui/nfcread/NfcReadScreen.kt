@@ -489,7 +489,7 @@ private fun DumpSummaryCard(
         Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text(stringResource(R.string.result_summary_title), style = MaterialTheme.typography.titleLarge)
             Text(
-                stringResource(readOutcomeLabelRes(dump.outcome)),
+                stringResource(readOutcomeLabelResource(dump.outcome)),
                 style = MaterialTheme.typography.headlineSmall,
                 color = MaterialTheme.colorScheme.primary,
             )

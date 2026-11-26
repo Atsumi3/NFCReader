@@ -61,7 +61,7 @@ NFCReaderは、Androidが公開するNFCタグ情報を読み取り専用で確�
 - targetSdkは37です。現行の新規掲載・更新要件（36以上）を満たすため、下げないでください。
 - phone screenshotsは実機UIから2〜8枚を撮影してください。4枚・1080x1920を推奨基準にし、捏造UIや秘密情報は含めないでください。
 - ソース`6530f10e16e330070ad8defcbdb5cfeb43c48dd2`のartifact-only署名APK ([run](https://github.com/Atsumi3/NFCReader/actions/runs/45865563391)) と署名AAB ([run](https://github.com/Atsumi3/NFCReader/actions/runs/45866374094)) では、native `.so` のELF `PT_LOAD` 16 KB alignmentを確認済みです。APK内のnative libraryはZIP上の16 KB alignmentも確認しました。これは当該revisionの成果物に対する検証で、将来のビルドには適用されません。Play Consoleへ提出する最終buildと、Play App Signing後に配信されるAPKは未確認のため、提出時に再検証してください。
-- Play versionCodeはConsole上の既登録最大値を確認し、手動Release実行時に`play_version_code`へ指定してください。
+- `play_version_code`にはPlay Consoleに登録済みの最大値より大きい正整数を指定し、上限`2,100,000,000`を超えないようにしてください。ソース既定値`2000100`は検証用で、本番値として未確定です。Console上の既存最大値は未確認です。
 - AABは既存のRelease workflowを対象ブランチで手動実行し、`artifact_only=true`、`artifact_format=aab`、確認済みの`play_version_code`を指定します。version bump・tag・GitHub Releaseは作りません。Actions artifactは公開リポジトリのread accessを持つ人が取得できるため、秘密情報を入れないでください。
 
 ### Data safety 申告メモ

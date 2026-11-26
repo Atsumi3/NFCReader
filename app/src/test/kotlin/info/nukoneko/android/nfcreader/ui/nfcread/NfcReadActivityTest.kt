@@ -94,7 +94,7 @@ class NfcReadActivityTest {
     }
 
     @Test
-    fun adapterStateBroadcastSyncsForegroundDispatchWithoutResume() {
+    fun adapterStateCallbackSyncsForegroundDispatchWithoutResume() {
         withResumedActivity(Intent().setAction(Intent.ACTION_MAIN), nfcEnabled = false) { controller ->
             val activity = controller.get()
             val adapter = requireNotNull(NfcAdapter.getDefaultAdapter(activity))
@@ -104,13 +104,13 @@ class NfcReadActivityTest {
             assertNull(adapterShadow.getEnabledActivity())
 
             adapterShadow.setEnabled(true)
-            sendAdapterStateChanged(NfcAdapter.STATE_OFF)
+            deliverAdapterStateChanged(activity, NfcAdapter.STATE_OFF)
 
             assertEquals(ReadStatus.Idle, viewModel(activity).state.value)
             assertSame(activity, adapterShadow.getEnabledActivity())
 
             adapterShadow.setEnabled(false)
-            sendAdapterStateChanged(NfcAdapter.STATE_ON)
+            deliverAdapterStateChanged(activity, NfcAdapter.STATE_ON)
 
             assertEquals(ReadStatus.Failure.NfcDisabled, viewModel(activity).state.value)
             assertSame(activity, adapterShadow.getDisabledActivity())
@@ -118,7 +118,7 @@ class NfcReadActivityTest {
     }
 
     @Test
-    fun adapterStateBroadcastWhilePausedDoesNotEnableDispatchUntilResume() {
+    fun adapterStateCallbackWhilePausedDoesNotEnableDispatchUntilResume() {
         withResumedActivity(Intent().setAction(Intent.ACTION_MAIN), nfcEnabled = false) { controller ->
             val activity = controller.get()
             val adapter = requireNotNull(NfcAdapter.getDefaultAdapter(activity))
@@ -126,7 +126,7 @@ class NfcReadActivityTest {
 
             controller.pause()
             adapterShadow.setEnabled(true)
-            sendAdapterStateChanged(NfcAdapter.STATE_ON)
+            deliverAdapterStateChanged(activity, NfcAdapter.STATE_ON)
 
             assertEquals(ReadStatus.Failure.NfcDisabled, viewModel(activity).state.value)
             assertNull(adapterShadow.getEnabledActivity())
@@ -181,8 +181,8 @@ class NfcReadActivityTest {
         )
     }
 
-    private fun sendAdapterStateChanged(state: Int) {
-        RuntimeEnvironment.getApplication().sendBroadcast(
+    private fun deliverAdapterStateChanged(activity: NfcReadActivity, state: Int) {
+        activity.handleAdapterStateChanged(
             Intent(NfcAdapter.ACTION_ADAPTER_STATE_CHANGED)
                 .putExtra(NfcAdapter.EXTRA_ADAPTER_STATE, state),
         )

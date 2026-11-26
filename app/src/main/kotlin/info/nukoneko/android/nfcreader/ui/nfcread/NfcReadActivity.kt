@@ -42,7 +42,7 @@ class NfcReadActivity : ComponentActivity() {
 
     private val adapterStateReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) {
-            if (intent.action == NfcAdapter.ACTION_ADAPTER_STATE_CHANGED) syncNfcState()
+            handleAdapterStateChanged(intent)
         }
     }
 
@@ -111,6 +111,11 @@ class NfcReadActivity : ComponentActivity() {
                 foregroundDispatchEnabled = true
             }
         }
+    }
+
+    internal fun handleAdapterStateChanged(intent: Intent) {
+        if (!adapterStateReceiverRegistered || intent.action != NfcAdapter.ACTION_ADAPTER_STATE_CHANGED) return
+        syncNfcState()
     }
 
     private fun disableForegroundDispatch() {

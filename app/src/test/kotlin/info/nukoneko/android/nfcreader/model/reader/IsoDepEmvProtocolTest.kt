@@ -277,6 +277,15 @@ class IsoDepEmvProtocolTest {
             it.scope == "IsoDep.app[0] log SFI 30 records" &&
                 it.startInclusive == 161L && it.endExclusive == 256L
         })
+        val genericUnreadRanges = result.unreadRanges.filter { it.reason.contains("bounded exploratory records") }
+        assertEquals(10, genericUnreadRanges.size)
+        for (sfi in 1..10) {
+            assertTrue(genericUnreadRanges.any {
+                it.scope == "IsoDep.app[0] SFI $sfi records" &&
+                    it.startInclusive == 1L && it.endExclusive == 17L &&
+                    it.reason.contains("physical record presence is not established")
+            })
+        }
     }
 
     @Test
@@ -310,6 +319,17 @@ class IsoDepEmvProtocolTest {
         assertEquals(143, recordCommands.count { ((it[3].toInt() and 0xFF) ushr 3) != 30 })
         assertTrue(result.issues.any { it.kind == ReadIssueKind.BUDGET_EXHAUSTED })
         assertTrue(result.unreadRanges.none { it.scope == "IsoDep.app[0] log SFI 30 records" })
+        val genericUnreadRanges = result.unreadRanges.filter { it.reason.contains("bounded exploratory records") }
+        assertEquals(2, genericUnreadRanges.size)
+        assertTrue(genericUnreadRanges.any {
+            it.scope == "IsoDep.app[0] SFI 9 records" &&
+                it.startInclusive == 16L && it.endExclusive == 17L
+        })
+        assertTrue(genericUnreadRanges.any {
+            it.scope == "IsoDep.app[0] SFI 10 records" &&
+                it.startInclusive == 1L && it.endExclusive == 17L
+        })
+        assertTrue(genericUnreadRanges.all { it.reason.contains("physical record presence is not established") })
     }
 
     @Test

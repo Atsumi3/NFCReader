@@ -137,20 +137,26 @@ internal class IsoDepEmvProtocol(
         var sentRecords = 0
         val genericSfis = (MIN_SFI..MAX_SFI).filterNot { it == logEntry?.sfi }
         val sfis = logEntry?.sfi?.let { listOf(it) + genericSfis } ?: genericSfis
-        for (sfi in sfis) {
+        for ((sfiIndex, sfi) in sfis.withIndex()) {
             val maxRecord = logEntry?.takeIf { it.sfi == sfi }?.maxRecords ?: MAX_RECORD
             for (record in MIN_RECORD..maxRecord) {
                 if (session.stopped) return
                 if (sentRecords >= MAX_RECORD_REQUESTS_PER_AID) {
                     context.addIssue(ReadIssue(ReadIssueKind.BUDGET_EXHAUSTED, "READ RECORD request limit reached for this application.", prefix))
-                    if (logEntry?.sfi == sfi) {
+                    for ((remainingIndex, unreadSfi) in sfis.drop(sfiIndex).withIndex()) {
+                        val unreadMaxRecord = logEntry?.takeIf { it.sfi == unreadSfi }?.maxRecords ?: MAX_RECORD
+                        val isAdvertisedLog = logEntry?.sfi == unreadSfi
                         context.addUnreadRange(
                             UnreadRange(
-                                "$prefix log SFI $sfi records",
+                                if (isAdvertisedLog) "$prefix log SFI $unreadSfi records" else "$prefix SFI $unreadSfi records",
                                 "record",
-                                record.toLong(),
-                                maxRecord.toLong() + 1L,
-                                "Per-application READ RECORD limit reached.",
+                                (if (remainingIndex == 0) record else MIN_RECORD).toLong(),
+                                unreadMaxRecord.toLong() + 1L,
+                                if (isAdvertisedLog) {
+                                    "Per-application READ RECORD limit reached before the advertised log range was complete."
+                                } else {
+                                    "Per-application READ RECORD limit reached during bounded exploratory records; physical record presence is not established."
+                                },
                             )
                         )
                     }

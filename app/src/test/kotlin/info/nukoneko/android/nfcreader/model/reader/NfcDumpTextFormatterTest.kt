@@ -93,6 +93,7 @@ class NfcDumpTextFormatterTest {
         fields = emptyList(),
         readResult = TechReadResult(
             decodedFields = listOf(NfcField("example", value)),
+            coverage = ReadCoverage("example values", "field", ReadRange(0, 1), listOf(ReadRange(0, 1))),
             outcome = ReadOutcome.COMPLETE,
         ),
     )

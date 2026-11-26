@@ -38,3 +38,5 @@ https://github.com/Atsumi3/NFCReader/releases/download/2.0.1/nfcreader-2.0.1.apk
 GitHub ActionsはJDK 21でPull Requestと`develop`へのpushを検証し、SDK Platform 37.1とBuild Tools 37.0.0をインストールします。
 
 成功したrunはDebug APKを`debug-apk` artifactとして7日間保存します。
+
+署名付きRelease APKのみを取得する場合は、Actionsの`Release` workflowを`chore/release-apk-artifact`（変更のmerge後は`develop`）から`artifact_only=true`で実行します。現在の`develop`をビルドしてAPK署名を検証し、`signed-release-apk-<develop-sha>` artifactを7日間保存します。version bump、`develop`へのcommit/push、tag作成、Release公開は行いません。`artifact_only=false`（既定値）は従来のRelease動作です。

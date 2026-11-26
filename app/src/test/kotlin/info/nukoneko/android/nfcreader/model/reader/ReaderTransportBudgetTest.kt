@@ -192,6 +192,42 @@ class ReaderTransportBudgetTest {
         assertTrue(deadlineContext.buildResult().issues.any { it.kind == ReadIssueKind.BUDGET_EXHAUSTED })
     }
 
+    @Test
+    fun felicaDistributesTheUnchangedBatchLimitAcrossAdvertisedSystems() {
+        val idm = byteArrayOf(1, 2, 3, 4, 5, 6, 7, 8)
+        val commands = mutableListOf<ByteArray>()
+        val context = context()
+        FelicaReader().readWithTransport(
+            discoveredSystemCode = byteArrayOf(0, 0x10),
+            maxTransceiveLength = 255,
+            transport = ReadOnlyTransport { command ->
+                commands += command.copyOf()
+                when (command[1].toInt() and 0xFF) {
+                    0x00 -> {
+                        val code = ((command[2].toInt() and 0xFF) shl 8) or (command[3].toInt() and 0xFF)
+                        byteArrayOf(20, 0x01) + idm + byteArrayOf(0xAA.toByte(), 0xBB.toByte(), 0xCC.toByte(), 0xDD.toByte(), 0xEE.toByte(), 0xFF.toByte(), 0x00, 0x11, (code ushr 8).toByte(), code.toByte())
+                    }
+                    0x0C -> byteArrayOf(15, 0x0D) + idm + byteArrayOf(2, 0, 0x10, 0, 0x20)
+                    0x02 -> {
+                        val count = command[10].toInt() and 0xFF
+                        byteArrayOf((11 + count * 2).toByte(), 0x03) + idm + byteArrayOf(count.toByte()) + ByteArray(count * 2) { 0xFF.toByte() }
+                    }
+                    else -> error("Unexpected FeliCa command")
+                }
+            },
+            context = context,
+        )
+
+        val serviceCommands = commands.filter { (it[1].toInt() and 0xFF) == 0x02 }
+        val secondSystemPoll = commands.indexOfFirst {
+            (it[1].toInt() and 0xFF) == 0x00 && (((it[2].toInt() and 0xFF) shl 8) or (it[3].toInt() and 0xFF)) == 0x20
+        }
+        assertEquals(64, serviceCommands.size)
+        assertTrue(secondSystemPoll >= 0)
+        assertEquals(32, serviceCommands.count { command -> commands.indexOf(command) < secondSystemPoll })
+        assertEquals(32, serviceCommands.count { command -> commands.indexOf(command) > secondSystemPoll })
+    }
+
     private fun context(
         limits: TechReadLimits = TechReadLimits(timeoutMillis = 30_000, maxTransceives = 4096),
         clockNanos: () -> Long = System::nanoTime,

@@ -126,7 +126,18 @@ class FelicaReader : TechReader {
             if (systemCode == SUICA_SYSTEM_CODE) {
                 readSuicaHistory(boundedTransport, maxTransceiveLength, polling.idm, prefix, context)
             }
-            scanStandardServices(boundedTransport, maxTransceiveLength, polling.idm, systemCode, prefix, context, serviceBudget)
+            val systemBatchLimit = MAX_SERVICE_BATCHES / systems.size +
+                if (index < MAX_SERVICE_BATCHES % systems.size) 1 else 0
+            scanStandardServices(
+                boundedTransport,
+                maxTransceiveLength,
+                polling.idm,
+                systemCode,
+                prefix,
+                context,
+                serviceBudget,
+                systemBatchLimit,
+            )
             if (context.buildResult().issues.any { it.kind == ReadIssueKind.TAG_LOST }) break
             completedSystems += ReadRange(index.toLong(), index + 1L)
             index += 1
@@ -162,7 +173,7 @@ class FelicaReader : TechReader {
         context.addIssue(
             ReadIssue(
                 ReadIssueKind.COVERAGE_UNKNOWN,
-                "Service discovery is bounded to 2048 standard-attribute candidates, 64 batches, 512 exchanges, 4096 blocks, and 30 seconds; physical capacity remains unknown.",
+                "Service discovery is bounded to 2048 standard-attribute candidates per system and 64 total batches distributed across systems, 512 exchanges, 4096 blocks, and 30 seconds; physical capacity remains unknown.",
                 "FeliCa service coverage",
             )
         )
@@ -177,6 +188,7 @@ class FelicaReader : TechReader {
         prefix: String,
         context: TechReadContext,
         budget: ServiceBudget,
+        batchLimit: Int,
     ) {
         val candidates = (0..127).flatMap { number ->
             (0x08..0x17).map { attribute -> buildFelicaServiceCode(number, attribute) }
@@ -187,7 +199,10 @@ class FelicaReader : TechReader {
         try {
         while (offset < candidates.size) {
             context.checkpoint()
-            if (budget.batches >= 64 || !reserveServiceExchange(context, budget, prefix)) break
+            if ((budget.batchesBySystem[systemCode] ?: 0) >= batchLimit ||
+                budget.batches >= MAX_SERVICE_BATCHES ||
+                !reserveServiceExchange(context, budget, prefix)
+            ) break
             val batch = candidates.subList(offset, minOf(offset + 32, candidates.size))
             val location = "$prefix Request Service offset %d".format(offset)
             val request = buildRequestServiceCommand(idm, batch)
@@ -196,6 +211,7 @@ class FelicaReader : TechReader {
                 break
             }
             budget.batches += 1
+            budget.batchesBySystem[systemCode] = (budget.batchesBySystem[systemCode] ?: 0) + 1
             context.captureRaw("FeliCa Request Service request", request, location)
             val response = try {
                 transport.transceiveReadOnly(request)
@@ -310,7 +326,13 @@ class FelicaReader : TechReader {
         return true
     }
 
-    private data class ServiceBudget(val startedAt: Long = System.nanoTime(), var exchanges: Int = 0, var batches: Int = 0, var blocks: Int = 0)
+    private data class ServiceBudget(
+        val startedAt: Long = System.nanoTime(),
+        var exchanges: Int = 0,
+        var batches: Int = 0,
+        var blocks: Int = 0,
+        val batchesBySystem: MutableMap<Int, Int> = mutableMapOf(),
+    )
 
     private fun poll(
         transport: ReadOnlyTransport,
@@ -505,6 +527,7 @@ class FelicaReader : TechReader {
     )
 
     private companion object {
+        const val MAX_SERVICE_BATCHES = 64
         const val MAX_SYSTEMS = 32
         const val HISTORY_BLOCKS = 20
         const val READ_CHUNK = 4

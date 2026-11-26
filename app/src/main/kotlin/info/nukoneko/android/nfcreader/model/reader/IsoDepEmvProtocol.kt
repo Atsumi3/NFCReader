@@ -142,8 +142,28 @@ internal class IsoDepEmvProtocol(
             for (record in MIN_RECORD..maxRecord) {
                 if (session.stopped) return
                 if (sentRecords >= MAX_RECORD_REQUESTS_PER_AID) {
-                    context.addIssue(ReadIssue(ReadIssueKind.BUDGET_EXHAUSTED, "READ RECORD range cap reached for this application.", prefix))
-                    context.addUnreadRange(UnreadRange(prefix + " SFI scan", "record request", sentRecords.toLong(), MAX_RECORD_REQUESTS_PER_AID.toLong(), "Per-application READ RECORD limit reached."))
+                    context.addIssue(ReadIssue(ReadIssueKind.BUDGET_EXHAUSTED, "READ RECORD request limit reached for this application.", prefix))
+                    if (logEntry?.sfi == sfi) {
+                        context.addUnreadRange(
+                            UnreadRange(
+                                "$prefix log SFI $sfi records",
+                                "record",
+                                record.toLong(),
+                                maxRecord.toLong() + 1L,
+                                "Per-application READ RECORD limit reached.",
+                            )
+                        )
+                    } else if (logEntry != null && logEntry.sfi > sfi) {
+                        context.addUnreadRange(
+                            UnreadRange(
+                                "$prefix log SFI ${logEntry.sfi} records",
+                                "record",
+                                MIN_RECORD.toLong(),
+                                logEntry.maxRecords.toLong() + 1L,
+                                "Per-application READ RECORD limit reached before the advertised log range.",
+                            )
+                        )
+                    }
                     return
                 }
                 context.checkpoint()
@@ -212,11 +232,7 @@ internal class IsoDepEmvProtocol(
             context.addUnreadRange(UnreadRange("$prefix log records", "record", reason = "Invalid log SFI or record count; no log-targeted read."))
             return null
         }
-        if (recordCount > MAX_RECORD) {
-            context.addIssue(ReadIssue(ReadIssueKind.BUDGET_EXHAUSTED, "Log record count exceeds the bounded record 1..16 profile.", "$prefix FCI 9F4D"))
-            context.addUnreadRange(UnreadRange("$prefix log SFI $sfi", "record", MAX_RECORD.toLong() + 1L, recordCount.toLong() + 1L, "Per-SFI record limit reached."))
-        }
-        return LogEntry(sfi, minOf(recordCount, MAX_RECORD))
+        return LogEntry(sfi, recordCount)
     }
 
     private fun parseLogFormat(nodes: List<Tlv>, prefix: String, context: TechReadContext): DolParseResult? {

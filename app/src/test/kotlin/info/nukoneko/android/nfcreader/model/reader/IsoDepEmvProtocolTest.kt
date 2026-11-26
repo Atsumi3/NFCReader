@@ -211,13 +211,13 @@ class IsoDepEmvProtocolTest {
                 commands += command.copyOf()
                 when {
                     command.contentEquals(SELECT_PPSE) -> ppseResponse(visa)
-                    (command[1].toInt() and 0xFF) == 0xA4 -> fciResponse(visa, byteArrayOf(30, 2))
+                    (command[1].toInt() and 0xFF) == 0xA4 -> fciResponse(visa, byteArrayOf(30, 17))
                     (command[0].toInt() and 0xFF) == 0x80 && (command[1].toInt() and 0xFF) == 0xCA ->
                         getDataResponse(((command[2].toInt() and 0xFF) shl 8) or (command[3].toInt() and 0xFF))
                     (command[1].toInt() and 0xFF) == 0xB2 -> {
                         val record = command[2].toInt() and 0xFF
                         val sfi = (command[3].toInt() and 0xFF) ushr 3
-                        if (sfi == 30 && record in 1..2) hexToBytes("9000") else hexToBytes("6A82")
+                        if (sfi == 30 && record in 1..17) hexToBytes("9000") else hexToBytes("6A82")
                     }
                     else -> error("Unexpected APDU")
                 }
@@ -234,12 +234,48 @@ class IsoDepEmvProtocolTest {
                 (it[3].toInt() and 0xFF) == 0xF4
         })
         assertEquals(
-            listOf(1, 2),
+            (1..17).toList(),
             recordCommands.filter { ((it[3].toInt() and 0xFF) ushr 3) == 30 }
                 .map { it[2].toInt() and 0xFF },
         )
         assertTrue(recordCommands.none { ((it[3].toInt() and 0xFF) ushr 3) in 11..29 })
         assertTrue(context.buildResult().issues.none { it.message.contains("outside the bounded SFI") })
+    }
+
+    @Test
+    fun advertisedLogRecordCountStopsAtPerApplicationRequestBudget() {
+        val visa = hexToBytes("A0000000031010")
+        val commands = mutableListOf<ByteArray>()
+        val context = newContext()
+        IsoDepEmvReader().readWithTransport(
+            transport = ReadOnlyTransport { command ->
+                commands += command.copyOf()
+                when {
+                    command.contentEquals(SELECT_PPSE) -> ppseResponse(visa)
+                    (command[1].toInt() and 0xFF) == 0xA4 -> fciResponse(visa, byteArrayOf(30, 0xFF.toByte()))
+                    (command[0].toInt() and 0xFF) == 0x80 && (command[1].toInt() and 0xFF) == 0xCA ->
+                        getDataResponse(((command[2].toInt() and 0xFF) shl 8) or (command[3].toInt() and 0xFF))
+                    (command[1].toInt() and 0xFF) == 0xB2 -> {
+                        val sfi = (command[3].toInt() and 0xFF) ushr 3
+                        if (sfi == 30) hexToBytes("9000") else hexToBytes("6A82")
+                    }
+                    else -> error("Unexpected APDU")
+                }
+            },
+            maxTransceiveLength = 255,
+            context = context,
+        )
+
+        val recordCommands = commands.filter { (it[1].toInt() and 0xFF) == 0xB2 }
+        val logRecords = recordCommands.filter { ((it[3].toInt() and 0xFF) ushr 3) == 30 }
+        val result = context.buildResult()
+        assertEquals(160, recordCommands.size)
+        assertEquals((1..150).toList(), logRecords.map { it[2].toInt() and 0xFF })
+        assertTrue(result.issues.any { it.kind == ReadIssueKind.BUDGET_EXHAUSTED })
+        assertTrue(result.unreadRanges.any {
+            it.scope == "IsoDep.app[0] log SFI 30 records" &&
+                it.startInclusive == 151L && it.endExclusive == 256L
+        })
     }
 
     @Test

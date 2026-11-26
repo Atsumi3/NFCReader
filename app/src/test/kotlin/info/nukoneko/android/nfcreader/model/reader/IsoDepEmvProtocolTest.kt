@@ -161,6 +161,47 @@ class IsoDepEmvProtocolTest {
     }
 
     @Test
+    fun deadlineAfterPpseKeepsRawAndStopsFurtherApdus() {
+        val visa = hexToBytes("A0000000031010")
+        val commands = mutableListOf<ByteArray>()
+        var nowNanos = 0L
+        var budgetThrown = false
+        val context = TechReadContext(
+            RawCaptureBudget(),
+            FieldValueBudget(),
+            cancellationCheck = {},
+            limits = TechReadLimits(timeoutMillis = 1, maxTransceives = 16),
+            clockNanos = { nowNanos },
+        )
+
+        try {
+            IsoDepEmvReader().readWithTransport(
+                transport = ReadOnlyTransport { command ->
+                    commands += command.copyOf()
+                    if (command.contentEquals(SELECT_PPSE)) {
+                        nowNanos = 1_000_000L
+                        ppseResponse(visa)
+                    } else {
+                        error("No APDU may be sent after the deadline.")
+                    }
+                },
+                maxTransceiveLength = 255,
+                context = context,
+            )
+        } catch (_: ReadBudgetExceededException) {
+            budgetThrown = true
+        }
+
+        val result = context.buildResult()
+        assertTrue(budgetThrown)
+        assertEquals(1, commands.size)
+        assertTrue(result.rawChunks.any { it.label.startsWith("ISO-DEP APDU response") })
+        assertTrue(result.issues.any { it.kind == ReadIssueKind.BUDGET_EXHAUSTED })
+        assertTrue(result.unreadRanges.any { it.reason.contains("budget", ignoreCase = true) })
+        assertTrue(result.coverage.expectedRange == null)
+    }
+
+    @Test
     fun advertisedLogSfi30ReadsOnlyItsAdvertisedRecordCount() {
         val visa = hexToBytes("A0000000031010")
         val commands = mutableListOf<ByteArray>()

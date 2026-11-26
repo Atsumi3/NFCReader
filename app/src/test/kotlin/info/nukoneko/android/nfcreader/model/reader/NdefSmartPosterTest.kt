@@ -3,6 +3,9 @@ package info.nukoneko.android.nfcreader.model.reader
 import android.nfc.NdefMessage
 import android.nfc.NdefRecord
 import android.os.Build
+import info.nukoneko.android.nfcreader.model.entity.ReadIssueKind
+import info.nukoneko.android.nfcreader.model.entity.ReadOutcome
+import info.nukoneko.android.nfcreader.model.entity.ReadRange
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -65,6 +68,41 @@ class NdefSmartPosterTest {
         val valid = NdefMessage(arrayOf(wellKnown("U", byteArrayOf(0, 'x'.code.toByte())))).toByteArray()
         val oversized = decodeSmartPosterPayload(valid, maxPayloadBytes = 1)
         assertTrue(oversized.warnings.any { it.contains("decode limit") })
+    }
+
+    @Test
+    fun deadlineDuringRecordDecodeKeepsCompletedAndUnreadRanges() {
+        var clockCall = 0
+        val clockValues = longArrayOf(0L, 0L, 1_000_000L)
+        val context = TechReadContext(
+            RawCaptureBudget(),
+            FieldValueBudget(),
+            cancellationCheck = {},
+            limits = TechReadLimits(timeoutMillis = 1, maxTransceives = 16),
+            clockNanos = { clockValues.getOrElse(clockCall++) { clockValues.last() } },
+        )
+        val records = listOf(
+            NdefRecord(NdefRecord.TNF_MIME_MEDIA, "text/plain".toByteArray(), byteArrayOf(), "first".toByteArray()),
+            NdefRecord(NdefRecord.TNF_MIME_MEDIA, "text/plain".toByteArray(), byteArrayOf(), "second".toByteArray()),
+        )
+        var budgetThrown = false
+
+        try {
+            NdefReader().decodeRecords(records, records.size, context)
+        } catch (_: ReadBudgetExceededException) {
+            budgetThrown = true
+        }
+
+        val result = context.buildResult()
+        assertTrue(budgetThrown)
+        assertEquals(ReadRange(0, 2), result.coverage.expectedRange)
+        assertEquals(listOf(ReadRange(0, 1)), result.coverage.completedRanges)
+        assertTrue(result.unreadRanges.any {
+            it.scope == "NDEF records" && it.startInclusive == 1L && it.endExclusive == 2L
+        })
+        assertTrue(result.issues.any { it.kind == ReadIssueKind.BUDGET_EXHAUSTED })
+        assertEquals(ReadOutcome.PARTIAL, result.outcome)
+        assertTrue(result.decodedFields.none { it.label == "NDEF[1].tnf" })
     }
 
     private fun wellKnown(type: String, payload: ByteArray) = NdefRecord(

@@ -79,92 +79,13 @@ class NdefReader : TechReader {
 
         val records = message.records
         val includedRecords = records.take(MAX_RECORDS)
-        var completedRecordCount = 0
         context.addDecodedFields(
             listOf(
                 NfcField("NDEF.recordCount", records.size.toString()),
                 NfcField("NDEF.captureScope", "Android-provided NDEF message records only"),
             )
         )
-        try {
-        includedRecords.forEachIndexed { index, record ->
-            context.checkpoint()
-            val tag = "NDEF[$index]"
-            val payload = record.payload
-            val payloadDecode = decodeNdefPayload(record.tnf.toInt(), record.type, payload)
-            context.addDecodedFields(
-                listOf(
-                    NfcField("$tag.tnf", tnfName(record.tnf)),
-                    NfcField("$tag.type", record.type.asPrintable()),
-                    NfcField("$tag.typeHex", record.type.toHexString()),
-                    NfcField("$tag.idHex", record.id.toHexString()),
-                    NfcField("$tag.payloadByteCount", payload.size.toString()),
-                    NfcField("$tag.payloadPreview", payloadDecode.decodedText ?: payload.previewHex()),
-                    payloadDecode.language?.let { NfcField("$tag.language", it) },
-                ).filterNotNull()
-            )
-            context.captureRaw("$tag.logical payload", payload, "record $index payload")
-            context.captureRaw("$tag.type", record.type, "record $index type")
-            context.captureRaw("$tag.id", record.id, "record $index id")
-            if (isSmartPosterRecord(record)) {
-                val nested = decodeSmartPosterPayload(payload)
-                context.addDecodedFields(
-                    nested.fields.map { field ->
-                        NfcField("$tag.smartPoster." + field.label, field.value)
-                    }
-                )
-                nested.warnings.forEach { warning ->
-                    context.addIssue(
-                        ReadIssue(
-                            kind = ReadIssueKind.MALFORMED_RESPONSE,
-                            message = warning,
-                            operation = "$tag Smart Poster",
-                        )
-                    )
-                    context.markPartial()
-                }
-            }
-            if (payloadDecode.previewTruncated ||
-                (payload.size > MAX_RECORD_PREVIEW_BYTES && payloadDecode.decodedText == null)
-            ) {
-                context.addDecodedFields(
-                    listOf(NfcField("$tag.payloadPreviewLimit", "$MAX_RECORD_PREVIEW_BYTES bytes; raw capture is separate"))
-                )
-            }
-            payloadDecode.warnings.forEach { warning ->
-                context.addIssue(
-                    ReadIssue(
-                        kind = ReadIssueKind.MALFORMED_RESPONSE,
-                        message = warning,
-                        operation = tag,
-                    )
-                )
-                context.markPartial()
-            }
-            completedRecordCount = index + 1
-        }
-        } catch (cancelled: CancellationException) {
-            if (completedRecordCount < records.size) {
-                context.addUnreadRange(
-                    info.nukoneko.android.nfcreader.model.entity.UnreadRange(
-                        "NDEF records",
-                        "record",
-                        completedRecordCount.toLong(),
-                        records.size.toLong(),
-                        "Read cancelled; remaining records were not decoded.",
-                    )
-                )
-            }
-            context.setCoverage(
-                ReadCoverage(
-                    scope = "Android-provided NDEF message records",
-                    unit = "record",
-                    expectedRange = ReadRange(0, records.size.toLong()),
-                    completedRanges = listOf(ReadRange(0, completedRecordCount.toLong())),
-                )
-            )
-            throw cancelled
-        }
+        decodeRecords(includedRecords, records.size, context)
         if (records.size > includedRecords.size) {
             context.addUnreadRange(
                 info.nukoneko.android.nfcreader.model.entity.UnreadRange(
@@ -203,6 +124,106 @@ class NdefReader : TechReader {
         )
         if (liveMessage != null && records.size == includedRecords.size) context.markComplete()
         else context.markPartial()
+    }
+
+    internal fun decodeRecords(
+        includedRecords: List<NdefRecord>,
+        totalRecordCount: Int,
+        context: TechReadContext,
+    ) {
+        var completedRecordCount = 0
+        try {
+            includedRecords.forEachIndexed { index, record ->
+                context.checkpoint()
+                val tag = "NDEF[$index]"
+                val payload = record.payload
+                val payloadDecode = decodeNdefPayload(record.tnf.toInt(), record.type, payload)
+                context.addDecodedFields(
+                    listOf(
+                        NfcField("$tag.tnf", tnfName(record.tnf)),
+                        NfcField("$tag.type", record.type.asPrintable()),
+                        NfcField("$tag.typeHex", record.type.toHexString()),
+                        NfcField("$tag.idHex", record.id.toHexString()),
+                        NfcField("$tag.payloadByteCount", payload.size.toString()),
+                        NfcField("$tag.payloadPreview", payloadDecode.decodedText ?: payload.previewHex()),
+                        payloadDecode.language?.let { NfcField("$tag.language", it) },
+                    ).filterNotNull()
+                )
+                context.captureRaw("$tag.logical payload", payload, "record $index payload")
+                context.captureRaw("$tag.type", record.type, "record $index type")
+                context.captureRaw("$tag.id", record.id, "record $index id")
+                if (isSmartPosterRecord(record)) {
+                    val nested = decodeSmartPosterPayload(payload)
+                    context.addDecodedFields(
+                        nested.fields.map { field ->
+                            NfcField("$tag.smartPoster." + field.label, field.value)
+                        }
+                    )
+                    nested.warnings.forEach { warning ->
+                        context.addIssue(
+                            ReadIssue(
+                                kind = ReadIssueKind.MALFORMED_RESPONSE,
+                                message = warning,
+                                operation = "$tag Smart Poster",
+                            )
+                        )
+                        context.markPartial()
+                    }
+                }
+                if (payloadDecode.previewTruncated ||
+                    (payload.size > MAX_RECORD_PREVIEW_BYTES && payloadDecode.decodedText == null)
+                ) {
+                    context.addDecodedFields(
+                        listOf(NfcField("$tag.payloadPreviewLimit", "$MAX_RECORD_PREVIEW_BYTES bytes; raw capture is separate"))
+                    )
+                }
+                payloadDecode.warnings.forEach { warning ->
+                    context.addIssue(
+                        ReadIssue(
+                            kind = ReadIssueKind.MALFORMED_RESPONSE,
+                            message = warning,
+                            operation = tag,
+                        )
+                    )
+                    context.markPartial()
+                }
+                completedRecordCount = index + 1
+            }
+        } catch (cancelled: CancellationException) {
+            finishPartialRecordRead(context, completedRecordCount, totalRecordCount, "Read cancelled; remaining records were not decoded.")
+            throw cancelled
+        } catch (budgetExceeded: ReadBudgetExceededException) {
+            finishPartialRecordRead(
+                context,
+                completedRecordCount,
+                totalRecordCount,
+                budgetExceeded.message ?: "Read budget exhausted; remaining records were not decoded.",
+            )
+            throw budgetExceeded
+        }
+    }
+
+    private fun finishPartialRecordRead(context: TechReadContext, completedRecordCount: Int, totalRecordCount: Int, reason: String) {
+        if (completedRecordCount < totalRecordCount) {
+            context.addUnreadRange(
+                info.nukoneko.android.nfcreader.model.entity.UnreadRange(
+                    "NDEF records",
+                    "record",
+                    completedRecordCount.toLong(),
+                    totalRecordCount.toLong(),
+                    reason,
+                )
+            )
+        }
+        context.setCoverage(
+            ReadCoverage(
+                scope = "Android-provided NDEF message records",
+                unit = "record",
+                expectedRange = ReadRange(0, totalRecordCount.toLong()),
+                completedRanges = listOf(ReadRange(0, completedRecordCount.toLong())),
+            )
+        )
+        context.markPartial()
     }
 
     private fun ByteArray.asPrintable(): String {

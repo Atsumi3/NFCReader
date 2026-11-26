@@ -116,6 +116,10 @@ internal class IsoDepEmvProtocol(
             readRecords(session, prefix, logEntry, logDol, context)
         }
         finish(context)
+        } catch (budgetExceeded: ReadBudgetExceededException) {
+            context.addUnreadRange(UnreadRange("ISO-DEP read-only exploration", "APDU", reason = "Read budget exhausted; no further APDUs were requested."))
+            finish(context)
+            throw budgetExceeded
         } catch (cancelled: CancellationException) {
             context.addUnreadRange(UnreadRange("ISO-DEP read-only exploration", "APDU", reason = "Read cancelled; no further APDUs were requested."))
             finish(context)

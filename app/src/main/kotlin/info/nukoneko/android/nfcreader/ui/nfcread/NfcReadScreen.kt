@@ -656,11 +656,21 @@ private fun RawChunkRow(
                 },
             )
         }
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            TextButton(onClick = onToggle) {
-                Text(stringResource(if (expanded) R.string.hide_raw_chunk else R.string.show_raw_chunk))
+        val toggleLabel = stringResource(if (expanded) R.string.hide_raw_chunk else R.string.show_raw_chunk)
+        val copyLabel = stringResource(R.string.copy_raw_chunk)
+        Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            TextButton(
+                onClick = onToggle,
+                modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp).semantics { contentDescription = toggleLabel },
+            ) {
+                Text(toggleLabel, modifier = Modifier.fillMaxWidth(), textAlign = TextAlign.Start)
             }
-            TextButton(onClick = onCopy) { Text(stringResource(R.string.copy_raw_chunk)) }
+            TextButton(
+                onClick = onCopy,
+                modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp).semantics { contentDescription = copyLabel },
+            ) {
+                Text(copyLabel, modifier = Modifier.fillMaxWidth(), textAlign = TextAlign.Start)
+            }
         }
     }
 }

@@ -103,34 +103,37 @@ class NfcReadViewModel(
     }
 
     fun completePendingDumpFileExport(cacheDir: File, contentResolver: ContentResolver, uri: Uri?) {
-        val token = pendingDumpFileExportToken()
+        completePendingDumpFileExport(cacheDir, uri) { token, target ->
+            val output = contentResolver.openOutputStream(target) ?: throw IOException("Unable to open export destination.")
+            output.use { NfcDumpFileExporter.copyPendingExportToStream(cacheDir, token, it) }
+            true
+        }
+    }
+
+    internal fun completePendingDumpFileExport(
+        cacheDir: File,
+        uri: Uri?,
+        copyPendingExport: suspend (String, Uri) -> Boolean,
+    ): Job? {
+        val token = consumePendingDumpFileExportToken()
         if (uri == null) {
-            if (token != null) viewModelScope.launch { discardPendingDumpFileExport(cacheDir, token) }
-            return
+            return token?.let { viewModelScope.launch { discardPendingDumpFileExport(cacheDir, it) } }
         }
         if (token == null) {
             publishDumpFileExportResult(saved = false)
-            return
+            return null
         }
-        viewModelScope.launch {
-            val saved = try {
-                withContext(Dispatchers.IO) {
-                    try {
-                        val output = contentResolver.openOutputStream(uri) ?: throw IOException("Unable to open export destination.")
-                        output.use { NfcDumpFileExporter.copyPendingExportToStream(cacheDir, token, it) }
-                        true
-                    } catch (exception: CancellationException) {
-                        throw exception
-                    } catch (exception: Exception) {
-                        false
-                    } finally {
-                        runCatching { NfcDumpFileExporter.deletePendingExportFile(cacheDir, token) }
-                    }
+        return viewModelScope.launch {
+            val saved = withContext(Dispatchers.IO) {
+                try {
+                    copyPendingExport(token, uri)
+                } catch (exception: CancellationException) {
+                    throw exception
+                } catch (exception: Exception) {
+                    false
+                } finally {
+                    runCatching { NfcDumpFileExporter.deletePendingExportFile(cacheDir, token) }
                 }
-            } catch (exception: CancellationException) {
-                throw exception
-            } finally {
-                savedStateHandle[PENDING_EXPORT_TOKEN_KEY] = null
             }
             publishDumpFileExportResult(saved)
         }
@@ -138,6 +141,12 @@ class NfcReadViewModel(
 
     internal fun pendingDumpFileExportToken(): String? =
         savedStateHandle.get(PENDING_EXPORT_TOKEN_KEY)
+
+    private fun consumePendingDumpFileExportToken(): String? {
+        val token = pendingDumpFileExportToken() ?: return null
+        savedStateHandle[PENDING_EXPORT_TOKEN_KEY] = null
+        return token
+    }
 
     internal suspend fun discardPendingDumpFileExport(cacheDir: File, token: String) {
         if (pendingDumpFileExportToken() == token) savedStateHandle[PENDING_EXPORT_TOKEN_KEY] = null

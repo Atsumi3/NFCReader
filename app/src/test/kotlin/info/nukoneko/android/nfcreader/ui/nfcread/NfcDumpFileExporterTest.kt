@@ -16,8 +16,18 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.RuntimeEnvironment
 import org.robolectric.annotation.Config
 import java.io.ByteArrayOutputStream
+import java.io.OutputStream
 import java.nio.file.Files
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.test.ExperimentalCoroutinesApi
+import kotlinx.coroutines.test.StandardTestDispatcher
+import kotlinx.coroutines.test.runCurrent
+import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.test.resetMain
+import kotlinx.coroutines.test.setMain
 
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [Build.VERSION_CODES.VANILLA_ICE_CREAM])
@@ -65,5 +75,60 @@ class NfcDumpFileExporterTest {
         val cancelFile = NfcDumpFileExporter.pendingExportFile(cacheDir, cancelToken)
         viewModel.discardPendingDumpFileExport(cacheDir, cancelToken)
         assertFalse(cancelFile.exists())
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun slowPendingCopyDoesNotDeleteOrClearNewerExport() = runTest {
+        Dispatchers.setMain(StandardTestDispatcher(testScheduler))
+        val cacheDir = Files.createTempDirectory("nfc-dump-overlap").toFile()
+        val viewModel = NfcReadViewModel(SavedStateHandle())
+        val writeStarted = CountDownLatch(1)
+        val allowWriteToFinish = CountDownLatch(1)
+        var copiedToken: String? = null
+
+        try {
+            assertTrue(viewModel.preparePendingDumpFileExport(cacheDir, "first dump"))
+            val firstToken = viewModel.pendingDumpFileExportToken()!!
+            val firstFile = NfcDumpFileExporter.pendingExportFile(cacheDir, firstToken)
+            val job = viewModel.completePendingDumpFileExport(
+                cacheDir,
+                Uri.parse("content://exports/first"),
+            ) { token, _ ->
+                copiedToken = token
+                val output = object : OutputStream() {
+                    override fun write(value: Int) = Unit
+
+                    override fun write(bytes: ByteArray, offset: Int, length: Int) {
+                        writeStarted.countDown()
+                        check(allowWriteToFinish.await(5, TimeUnit.SECONDS))
+                    }
+                }
+                NfcDumpFileExporter.copyPendingExportToStream(cacheDir, token, output)
+                true
+            }!!
+
+            runCurrent()
+            assertTrue(writeStarted.await(5, TimeUnit.SECONDS))
+            assertNull(viewModel.pendingDumpFileExportToken())
+            assertTrue(viewModel.preparePendingDumpFileExport(cacheDir, "second dump"))
+            val secondToken = viewModel.pendingDumpFileExportToken()!!
+            val secondFile = NfcDumpFileExporter.pendingExportFile(cacheDir, secondToken)
+
+            assertEquals(firstToken, copiedToken)
+            assertTrue(firstFile.exists())
+            assertTrue(secondFile.exists())
+            allowWriteToFinish.countDown()
+            job.join()
+
+            assertEquals(secondToken, viewModel.pendingDumpFileExportToken())
+            assertFalse(firstFile.exists())
+            assertTrue(secondFile.exists())
+            assertTrue(viewModel.dumpFileExportResult.value?.saved == true)
+        } finally {
+            allowWriteToFinish.countDown()
+            cacheDir.deleteRecursively()
+            Dispatchers.resetMain()
+        }
     }
 }

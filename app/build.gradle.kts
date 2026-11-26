@@ -1,6 +1,8 @@
+import org.gradle.api.tasks.testing.Test
+import org.gradle.api.tasks.testing.logging.TestExceptionFormat
+
 plugins {
     alias(libs.plugins.android.application)
-    alias(libs.plugins.kotlin.android)
     alias(libs.plugins.kotlin.compose)
 }
 
@@ -16,12 +18,17 @@ val releaseKeystore: String? = System.getenv("RELEASE_KEYSTORE_FILE")
 
 android {
     namespace = "info.nukoneko.android.nfcreader"
-    compileSdk = 36
+    compileSdk {
+        version = release(37) {
+            minorApiLevel = 1
+        }
+    }
+    buildToolsVersion = "37.0.0"
 
     defaultConfig {
         applicationId = "info.nukoneko.android.nfcreader"
-        minSdk = 21
-        targetSdk = 36
+        minSdk = 24
+        targetSdk = 37
         versionCode = (versionMajor * 10000 + versionMinor * 100 + versionPatch) * 100 + versionOffset
         versionName = "$versionMajor.$versionMinor.$versionPatch"
 
@@ -64,14 +71,27 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
 
-    kotlinOptions {
-        jvmTarget = "17"
+    sourceSets {
+        getByName("main") { kotlin.directories += "src/main/kotlin" }
+        getByName("test") { kotlin.directories += "src/test/kotlin" }
+        getByName("androidTest") { kotlin.directories += "src/androidTest/kotlin" }
     }
 
-    sourceSets {
-        getByName("main") { java.srcDirs("src/main/kotlin") }
-        getByName("test") { java.srcDirs("src/test/kotlin") }
-        getByName("androidTest") { java.srcDirs("src/androidTest/kotlin") }
+    testOptions {
+        unitTests.isIncludeAndroidResources = true
+    }
+}
+
+tasks.withType<Test>().configureEach {
+    testLogging {
+        events("failed")
+        exceptionFormat = TestExceptionFormat.FULL
+    }
+}
+
+kotlin {
+    compilerOptions {
+        jvmTarget = org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17
     }
 }
 
@@ -90,6 +110,7 @@ dependencies {
 
     testImplementation(libs.junit)
     testImplementation(libs.kotlinx.coroutines.test)
+    testImplementation(libs.robolectric)
 
     androidTestImplementation(platform(libs.androidx.compose.bom))
     androidTestImplementation(libs.androidx.test.runner)

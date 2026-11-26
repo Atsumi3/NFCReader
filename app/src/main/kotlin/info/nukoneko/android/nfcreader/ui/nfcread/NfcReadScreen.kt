@@ -184,6 +184,7 @@ private fun NfcDumpContent(
     saveJson: (String) -> Unit,
 ) {
     val context = LocalContext.current
+    val shareChooserTitle = stringResource(R.string.share_dump_title)
     val scope = rememberCoroutineScope()
     val clipboard = remember(context) { context.getSystemService(ClipboardManager::class.java) }
     val formattedSnapshot by produceState<NfcDumpExportSnapshot?>(initialValue = null, key1 = dump) {
@@ -220,7 +221,7 @@ private fun NfcDumpContent(
                     NfcDumpFileExporter.createShareIntent(context, file, mimeType)
                 }
                 context.startActivity(
-                    Intent.createChooser(shareIntent, context.getString(R.string.share_dump_title))
+                    Intent.createChooser(shareIntent, shareChooserTitle)
                         .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
                 )
             }.isSuccess

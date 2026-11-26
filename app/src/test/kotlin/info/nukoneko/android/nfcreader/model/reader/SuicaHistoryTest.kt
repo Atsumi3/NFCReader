@@ -52,7 +52,7 @@ class SuicaHistoryTest {
             SUICA_HISTORY_SERVICE,
             listOf(256),
         )
-        assertEquals("11060102030405060708010f0901000001", command.toHexStringCompact())
+        assertEquals("11060102030405060708010F0901000001", command.toHexStringCompact())
     }
 
     @Test

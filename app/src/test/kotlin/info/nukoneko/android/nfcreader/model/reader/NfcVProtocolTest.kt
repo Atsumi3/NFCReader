@@ -14,13 +14,13 @@ class NfcVProtocolTest {
     @Test
     fun extendedSystemInformationUsesParameterBeforeUid() {
         val command = buildNfcVGetSystemInformation(uid, extended = true)
-        assertEquals("223b1fE004015023456789".lowercase(), command?.toHexStringCompact())
+        assertEquals("223B1FE004015023456789", command?.toHexStringCompact())
     }
 
     @Test
     fun extendedBlockAddressIsLittleEndian() {
         val command = buildNfcVReadSingleBlock(uid, 256)
-        assertEquals("2230e0040150234567890001", command?.toHexStringCompact())
+        assertEquals("2230E0040150234567890001", command?.toHexStringCompact())
     }
 
     @Test

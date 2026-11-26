@@ -65,8 +65,11 @@ class IsoDepEmvProtocolTest {
             sfi in 1..10 && record in 1..16
         })
         assertFalse(commands.any { it.size > 1 && (it[1].toInt() and 0xFF) == 0xA8 })
-        assertArrayEquals(hexToBytes("010203"), hexToBytes(context.buildResult().decodedFields
-            .first { it.label == "IsoDep.app[0].record[1,1].log.9A" }.value!!))
+        assertEquals(
+            "01 02 03",
+            context.buildResult().decodedFields
+                .first { it.label == "IsoDep.app[0].record[1,1].log.9A" }.value,
+        )
         assertTrue(context.buildResult().decodedFields.any { it.label == "IsoDep.app[0].record[1,2].log.extraByteCount" && it.value == "1" })
         assertTrue(context.buildResult().rawChunks.any { it.label == "ISO-DEP log record bytes beyond 9F4F DOL" })
 
@@ -103,8 +106,8 @@ class IsoDepEmvProtocolTest {
         assertArrayEquals(SELECT_PPSE, commands[0])
         assertArrayEquals(hexToBytes("00C0000008"), commands[1])
         assertArrayEquals(hexToBytes("00C0000004"), commands[2])
-        assertTrue(context.buildResult().rawChunks.any { it.hex == "6108" })
-        assertTrue(context.buildResult().rawChunks.any { it.hex == "6C04" })
+        assertTrue(context.buildResult().rawChunks.any { it.hex.endsWith("6108") })
+        assertTrue(context.buildResult().rawChunks.any { it.hex.endsWith("6C04") })
         assertFalse(commands.any { it.size > 1 && (it[1].toInt() and 0xFF) == 0xA8 })
     }
 

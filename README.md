@@ -38,3 +38,32 @@ https://github.com/Atsumi3/NFCReader/releases/download/2.0.1/nfcreader-2.0.1.apk
 GitHub ActionsはJDK 21でPull Requestと`develop`へのpushを検証し、SDK Platform 37.1とBuild Tools 37.0.0をインストールします。
 
 成功したrunはDebug APKを`debug-apk` artifactとして7日間保存します。
+
+## Google Play 掲載案
+
+- **掲載名 (9/30):** NFCReader
+- **短い説明 (34/80):** NFCタグを読み取り、取得結果・未読範囲・rawデータを見やすく表示
+- **詳しい説明:**
+
+NFCReaderは、Androidが公開するNFCタグ情報を読み取り専用で確認するツールです。
+
+タグの種類、取得できた情報、デコード結果、raw bytes、読取範囲、問題や未読理由をまとめて表示します。技術ごとに結果を整理し、部分的な取得や読み取れなかった範囲も確認できます。
+
+読み取り結果は端末内で処理し、開発者のサーバーへ送信しません。テキストまたはJSONで保存したり、利用者が選んだアプリへ共有したりできます。共有前に、ダンプへカード識別子などの機微情報が含まれていないか確認してください。
+
+このアプリはタグへの書き込みや認証回避を行いません。すべてのタグや内部データの取得を保証するものではなく、認証が必要な領域や独自方式は読み取れないことがあります。
+
+### 掲載前の確認
+
+- Google Playのサポートメールは未確認です。掲載可能なメールの確認後にConsoleへ登録してください。
+- プライバシーポリシーHTMLは`app/src/main/assets/privacy-policy.html`です。公開URLへは未デプロイです。
+- Data safety、対象年齢、コンテンツレーティング、本人確認、署名登録、審査送信は未実施です。2023-11-13以降に作成された新規個人アカウントに該当する場合、production公開前に12人以上・連続14日間のclosed testが必要です。
+- targetSdkは37です。現行の新規掲載・更新要件（36以上）を満たすため、下げないでください。
+- phone screenshotsは実機UIから2〜8枚を撮影してください。4枚・1080x1920を推奨基準にし、捏造UIや秘密情報は含めないでください。
+- AAB内にnative `.so`がある場合は、16 KB page-size対応を完成成果物で確認してください。現時点ではAABを生成していないため未検証です。
+- Play versionCodeはConsole上の既登録最大値を確認し、手動Release実行時に`play_version_code`へ指定してください。
+- AABは既存のRelease workflowを対象ブランチで手動実行し、`artifact_only=true`、`artifact_format=aab`、確認済みの`play_version_code`を指定します。version bump・tag・GitHub Releaseは作りません。Actions artifactは公開リポジトリのread accessを持つ人が取得できるため、秘密情報を入れないでください。
+
+### Data safety 申告メモ
+
+現行コードでは広告・分析SDK、ネットワーク権限、アプリからのサーバー送信は確認されていません。読取結果はメモリ上で扱い、履歴として永続保存しません。利用者が保存先を選んだファイル、共有先アプリ、クリップボードにはデータが渡ります。共有用cacheはOSの整理まで残る場合があります。Play Consoleの質問に沿って最終確認し、未確認の申告を完了扱いにしないでください。

@@ -75,9 +75,10 @@ class NfcReadActivity : ComponentActivity() {
     override fun onResume() {
         super.onResume()
         val adapter = nfcAdapter
-        if (adapter == null) {
+        if (adapter == null || !adapter.isEnabled) {
             viewModel.onNfcDisabled()
         } else {
+            viewModel.onNfcEnabled()
             adapter.enableForegroundDispatch(this, pendingIntent, null, null)
         }
     }

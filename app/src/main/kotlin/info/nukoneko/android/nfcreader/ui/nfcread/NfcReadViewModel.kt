@@ -172,6 +172,15 @@ class NfcReadViewModel(
         retainStoppedDump(generation, previousDump) { ReadStatus.Failure.NfcDisabledWithDump(it) }
     }
 
+    fun onNfcEnabled() {
+        when (val current = _state.value) {
+            ReadStatus.Failure.NfcDisabled -> _state.value = ReadStatus.Idle
+            is ReadStatus.Failure.NfcDisabledWithDump ->
+                _state.value = ReadStatus.Success(current.dump.technologies, current.dump)
+            else -> Unit
+        }
+    }
+
     fun onNewIntent(intent: Intent?) {
         if (_state.value == ReadStatus.Failure.NfcDisabled ||
             _state.value is ReadStatus.Failure.NfcDisabledWithDump

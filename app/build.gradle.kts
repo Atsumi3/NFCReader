@@ -10,6 +10,10 @@ plugins {
 val versionMajor = (property("VERSION_MAJOR") as String).toInt()
 val versionMinor = (property("VERSION_MINOR") as String).toInt()
 val versionPatch = (property("VERSION_PATCH") as String).toInt()
+val versionCodeOverride = providers.gradleProperty("playVersionCode").orNull?.let { value ->
+    value.toIntOrNull()?.takeIf { it in 1..2_100_000_000 }
+        ?: error("playVersionCode must be an integer from 1 to 2100000000.")
+}
 val versionOffset = (property("VERSION_OFFSET") as String).toInt()
 
 // Release signing is configured only when the keystore env vars are present
@@ -29,7 +33,7 @@ android {
         applicationId = "info.nukoneko.android.nfcreader"
         minSdk = 24
         targetSdk = 37
-        versionCode = (versionMajor * 10000 + versionMinor * 100 + versionPatch) * 100 + versionOffset
+        versionCode = versionCodeOverride ?: (versionMajor * 10000 + versionMinor * 100 + versionPatch) * 100 + versionOffset
         versionName = "$versionMajor.$versionMinor.$versionPatch"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"

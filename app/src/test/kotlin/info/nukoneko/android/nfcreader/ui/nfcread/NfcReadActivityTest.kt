@@ -4,6 +4,7 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.nfc.NfcAdapter
 import android.os.Build
+import android.provider.Settings
 import android.os.Bundle
 import androidx.lifecycle.ViewModelProvider
 import info.nukoneko.android.nfcreader.model.entity.ReadStatus
@@ -49,6 +50,11 @@ class NfcReadActivityTest {
         withResumedActivity(Intent().setAction(Intent.ACTION_MAIN)) { controller ->
             assertEquals(ReadStatus.Idle, viewModel(controller.get()).state.value)
         }
+    }
+
+    @Test
+    fun nfcSettingsActionTargetsSystemNfcSettings() {
+        assertEquals(Settings.ACTION_NFC_SETTINGS, createNfcSettingsIntent().action)
     }
 
     @Test

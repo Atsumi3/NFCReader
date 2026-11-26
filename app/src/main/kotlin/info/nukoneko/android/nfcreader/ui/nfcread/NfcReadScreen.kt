@@ -3,13 +3,17 @@ package info.nukoneko.android.nfcreader.ui.nfcread
 import android.content.ClipboardManager
 import android.content.Intent
 import android.net.Uri
+import android.provider.Settings
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.compose.BackHandler
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -24,13 +28,18 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.TopAppBar
+import androidx.compose.foundation.Image
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -38,12 +47,17 @@ import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalUriHandler
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
@@ -64,6 +78,7 @@ import java.text.DateFormat
 import java.util.Date
 
 @Composable
+@OptIn(ExperimentalMaterial3Api::class)
 internal fun NfcReadScreen(
     state: ReadStatus,
     readTime: String,
@@ -76,6 +91,16 @@ internal fun NfcReadScreen(
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
+    var infoPage by rememberSaveable { mutableStateOf(0) }
+    var infoMenuExpanded by remember { mutableStateOf(false) }
+    BackHandler(enabled = infoPage != 0) { infoPage = 0 }
+
+    fun openNfcSettings() {
+        val opened = runCatching {
+            context.startActivity(createNfcSettingsIntent())
+        }.isSuccess
+        if (!opened) Toast.makeText(context, R.string.settings_open_failed, Toast.LENGTH_SHORT).show()
+    }
 
     LaunchedEffect(dumpFileExportResult?.id) {
         val result = dumpFileExportResult ?: return@LaunchedEffect
@@ -111,8 +136,39 @@ internal fun NfcReadScreen(
     val saveText: (String) -> Unit = { save(it, "nfc-dump.txt", textExporter::launch) }
     val saveJson: (String) -> Unit = { save(it, "nfc-dump.json", jsonExporter::launch) }
 
-    Scaffold(modifier = modifier.fillMaxSize()) { innerPadding ->
-        Column(
+    Scaffold(
+        modifier = modifier.fillMaxSize(),
+        topBar = {
+            TopAppBar(
+                title = { Text(stringResource(if (infoPage == 1) R.string.help_title else if (infoPage == 2) R.string.privacy_title else R.string.app_name)) },
+                navigationIcon = {
+                    if (infoPage != 0) {
+                        val backDescription = stringResource(R.string.back)
+                        IconButton(onClick = { infoPage = 0 }, modifier = Modifier.semantics { contentDescription = backDescription }) {
+                            Text("‹", style = MaterialTheme.typography.headlineSmall)
+                        }
+                    }
+                },
+                actions = {
+                    if (infoPage == 0) {
+                        val menuDescription = stringResource(R.string.info_menu)
+                        Box {
+                            IconButton(onClick = { infoMenuExpanded = true }, modifier = Modifier.semantics { contentDescription = menuDescription }) {
+                                Text("⋮", style = MaterialTheme.typography.titleLarge)
+                            }
+                            DropdownMenu(expanded = infoMenuExpanded, onDismissRequest = { infoMenuExpanded = false }) {
+                                DropdownMenuItem(text = { Text(stringResource(R.string.help_title)) }, onClick = { infoMenuExpanded = false; infoPage = 1 })
+                                DropdownMenuItem(text = { Text(stringResource(R.string.privacy_title)) }, onClick = { infoMenuExpanded = false; infoPage = 2 })
+                            }
+                        }
+                    }
+                },
+            )
+        },
+    ) { innerPadding ->
+        if (infoPage != 0) {
+            NfcInformationScreen(infoPage == 2, Modifier.padding(innerPadding))
+        } else Column(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(innerPadding)
@@ -134,7 +190,11 @@ internal fun NfcReadScreen(
                 contentAlignment = Alignment.Center,
             ) {
                 when (state) {
-                    ReadStatus.Idle -> CenteredMessage(stringResource(R.string.please_hold_up_device))
+                    ReadStatus.Idle -> ReaderStateCard(
+                        status = stringResource(R.string.state_waiting),
+                        title = stringResource(R.string.please_hold_up_device),
+                        description = stringResource(R.string.idle_read_only_description),
+                    )
                     ReadStatus.Reading -> ReadingMessage(onStopReading)
                     is ReadStatus.ReadingWithPrevious ->
                         NfcDumpContent(
@@ -152,6 +212,9 @@ internal fun NfcReadScreen(
                             stringResource(R.string.nfc_disabled),
                             saveText = saveText,
                             saveJson = saveJson,
+                            statusDescription = stringResource(R.string.nfc_disabled_help),
+                            statusActionLabel = stringResource(R.string.open_nfc_settings),
+                            onStatusAction = ::openNfcSettings,
                         )
 
                     is ReadStatus.Failure.IntentUnsupportedWithDump ->
@@ -162,7 +225,19 @@ internal fun NfcReadScreen(
                             saveJson = saveJson,
                         )
 
-                    is ReadStatus.Failure -> CenteredMessage(state.toMessage())
+                    is ReadStatus.Failure.NfcDisabled -> ReaderStateCard(
+                        status = stringResource(R.string.state_nfc_disabled),
+                        title = state.toMessage(),
+                        description = stringResource(R.string.nfc_disabled_help),
+                        actionLabel = stringResource(R.string.open_nfc_settings),
+                        onAction = ::openNfcSettings,
+                    )
+
+                    is ReadStatus.Failure -> ReaderStateCard(
+                        status = stringResource(R.string.state_attention),
+                        title = state.toMessage(),
+                        description = stringResource(R.string.read_error_description),
+                    )
                 }
             }
         }
@@ -171,15 +246,51 @@ internal fun NfcReadScreen(
 
 @Composable
 private fun ReadingMessage(onStopReading: () -> Unit) {
-    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-        CircularProgressIndicator()
-        Spacer(Modifier.height(12.dp))
-        Text(stringResource(R.string.please_hold_up_device))
-        TextButton(onClick = onStopReading) {
-            Text(stringResource(R.string.stop_reading))
+    ReaderStateCard(
+        status = stringResource(R.string.state_reading),
+        title = stringResource(R.string.reading_title),
+        description = stringResource(R.string.reading_description),
+        content = {
+            CircularProgressIndicator()
+            TextButton(onClick = onStopReading, modifier = Modifier.heightIn(min = 48.dp)) {
+                Text(stringResource(R.string.stop_reading))
+            }
+        },
+    )
+}
+
+@Composable
+private fun ReaderStateCard(
+    status: String,
+    title: String,
+    description: String,
+    actionLabel: String? = null,
+    onAction: (() -> Unit)? = null,
+    content: @Composable () -> Unit = {},
+) {
+    Card(Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 16.dp)) {
+        Column(
+            modifier = Modifier.fillMaxWidth().padding(24.dp).verticalScroll(rememberScrollState()),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Image(
+                painter = painterResource(R.drawable.ic_launcher_foreground),
+                contentDescription = null,
+                modifier = Modifier.size(72.dp),
+            )
+            Text(status, style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
+            Text(title, style = MaterialTheme.typography.headlineSmall, textAlign = TextAlign.Center)
+            Text(description, style = MaterialTheme.typography.bodyLarge, textAlign = TextAlign.Center)
+            if (actionLabel != null && onAction != null) {
+                Button(onClick = onAction, modifier = Modifier.heightIn(min = 48.dp)) { Text(actionLabel) }
+            }
+            content()
         }
     }
 }
+
+internal fun createNfcSettingsIntent(): Intent = Intent(Settings.ACTION_NFC_SETTINGS)
 
 @Composable
 private fun NfcDumpContent(
@@ -188,6 +299,9 @@ private fun NfcDumpContent(
     onStopReading: (() -> Unit)? = null,
     saveText: (String) -> Unit,
     saveJson: (String) -> Unit,
+    statusDescription: String? = null,
+    statusActionLabel: String? = null,
+    onStatusAction: (() -> Unit)? = null,
 ) {
     val context = LocalContext.current
     val shareChooserTitle = stringResource(R.string.share_dump_title)
@@ -235,119 +349,154 @@ private fun NfcDumpContent(
         }
     }
 
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(horizontal = 8.dp),
+    LazyColumn(
+        modifier = Modifier.fillMaxSize().padding(horizontal = 16.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-        statusMessage?.let { Text(it, style = MaterialTheme.typography.titleMedium) }
-        onStopReading?.let {
-            TextButton(onClick = it) { Text(stringResource(R.string.stop_reading)) }
+        statusMessage?.let { message ->
+            item(key = "status-banner") { ReaderStatusBanner(message, statusDescription, statusActionLabel, onStatusAction) }
         }
-        Text(stringResource(R.string.dump_sensitive_warning), style = MaterialTheme.typography.bodySmall)
-        Box {
-            Button(
-                modifier = Modifier.fillMaxWidth(),
-                enabled = export != null,
-                onClick = { actionsExpanded = true },
-            ) {
-                Text(stringResource(R.string.dump_actions))
-            }
-            DropdownMenu(expanded = actionsExpanded, onDismissRequest = { actionsExpanded = false }) {
-                DropdownMenuItem(
-                    text = { Text(stringResource(R.string.copy_dump)) },
-                    onClick = { actionsExpanded = false; export?.let { copy("NFC dump", it.text) } },
-                )
-                DropdownMenuItem(
-                    text = { Text(stringResource(R.string.copy_json_dump)) },
-                    onClick = { actionsExpanded = false; export?.let { copy("NFC dump JSON", it.json) } },
-                )
-                DropdownMenuItem(
-                    text = { Text(stringResource(R.string.share_dump)) },
-                    onClick = {
-                        actionsExpanded = false
-                        export?.let { share(it.text, "txt", "text/plain") }
-                    },
-                )
-                DropdownMenuItem(
-                    text = { Text(stringResource(R.string.share_json_dump)) },
-                    onClick = {
-                        actionsExpanded = false
-                        export?.let { share(it.json, "json", "application/json") }
-                    },
-                )
-                DropdownMenuItem(
-                    text = { Text(stringResource(R.string.save_text_dump)) },
-                    onClick = {
-                        actionsExpanded = false
-                        export?.let { saveText(it.text) }
-                    },
-                )
-                DropdownMenuItem(
-                    text = { Text(stringResource(R.string.save_json_dump)) },
-                    onClick = {
-                        actionsExpanded = false
-                        export?.let { saveJson(it.json) }
-                    },
-                )
-            }
+        onStopReading?.let { stop ->
+            item(key = "stop-reading") { TextButton(onClick = stop, modifier = Modifier.heightIn(min = 48.dp)) { Text(stringResource(R.string.stop_reading)) } }
         }
-
-        LazyColumn(
-            modifier = Modifier.weight(1f),
-            verticalArrangement = Arrangement.spacedBy(4.dp),
-        ) {
-            item(key = "dump-summary") {
-                Column(Modifier.fillMaxWidth().padding(8.dp)) {
-                    Text("Outcome: ${dump.outcome}; raw ${dump.rawBytesCaptured}/${dump.rawByteLimit} bytes")
-                    Text(
-                        stringResource(
-                            R.string.dump_captured_at,
-                            remember(dump.capturedAtEpochMillis) {
-                                DateFormat.getDateTimeInstance().format(Date(dump.capturedAtEpochMillis))
-                            },
-                        ),
-                        style = MaterialTheme.typography.bodySmall,
+        item(key = "sensitive-warning") {
+            Text(stringResource(R.string.dump_sensitive_warning), style = MaterialTheme.typography.bodyMedium)
+        }
+        item(key = "dump-actions") {
+            Box {
+                Button(
+                    modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
+                    enabled = export != null,
+                    onClick = { actionsExpanded = true },
+                ) {
+                    Text(stringResource(R.string.dump_actions))
+                }
+                DropdownMenu(expanded = actionsExpanded, onDismissRequest = { actionsExpanded = false }) {
+                    DropdownMenuItem(
+                        text = { Text(stringResource(R.string.copy_dump)) },
+                        onClick = { actionsExpanded = false; export?.let { copy("NFC dump", it.text) } },
                     )
-                }
-            }
-            dump.tag.idHex?.let { idHex ->
-                item(key = "tag-id") {
-                    ValueRow(NfcField("Tag ID", idHex), ::copy)
-                }
-            }
-            if (dump.tag.fields.isNotEmpty()) {
-                item(key = "tag-metadata-title") { SectionTitle(stringResource(R.string.metadata_section)) }
-                itemsIndexed(dump.tag.fields, key = { index, _ -> "tag-field-$index" }) { _, field ->
-                    ValueRow(field, ::copy)
-                }
-            }
-            if (dump.issues.isNotEmpty()) {
-                item(key = "dump-issues-title") { SectionTitle(stringResource(R.string.dump_issues)) }
-                itemsIndexed(dump.issues, key = { index, _ -> "dump-issue-$index" }) { _, issue ->
-                    IssueRow(issue)
-                }
-            }
-            dump.technologies.forEach { entity ->
-                val expanded = expandedTechnologies[entity.techName] == true
-                item(key = "tech-header:${entity.techName}") {
-                    TechnologyHeader(
-                        entity = entity,
-                        expanded = expanded,
-                        onToggle = { expandedTechnologies[entity.techName] = !expanded },
-                        onCopy = {
-                            export?.technologyText?.get(entity.techName)?.let {
-                                copy(entity.techName, it)
-                            }
+                    DropdownMenuItem(
+                        text = { Text(stringResource(R.string.copy_json_dump)) },
+                        onClick = { actionsExpanded = false; export?.let { copy("NFC dump JSON", it.json) } },
+                    )
+                    DropdownMenuItem(
+                        text = { Text(stringResource(R.string.share_dump)) },
+                        onClick = {
+                            actionsExpanded = false
+                            export?.let { share(it.text, "txt", "text/plain") }
+                        },
+                    )
+                    DropdownMenuItem(
+                        text = { Text(stringResource(R.string.share_json_dump)) },
+                        onClick = {
+                            actionsExpanded = false
+                            export?.let { share(it.json, "json", "application/json") }
+                        },
+                    )
+                    DropdownMenuItem(
+                        text = { Text(stringResource(R.string.save_text_dump)) },
+                        onClick = {
+                            actionsExpanded = false
+                            export?.let { saveText(it.text) }
+                        },
+                    )
+                    DropdownMenuItem(
+                        text = { Text(stringResource(R.string.save_json_dump)) },
+                        onClick = {
+                            actionsExpanded = false
+                            export?.let { saveJson(it.json) }
                         },
                     )
                 }
-                if (expanded) addTechnologyDetails(
+            }
+        }
+        item(key = "dump-summary") {
+            DumpSummaryCard(
+                dump = dump,
+                capturedAt = remember(dump.capturedAtEpochMillis) {
+                    DateFormat.getDateTimeInstance().format(Date(dump.capturedAtEpochMillis))
+                },
+                onCopy = ::copy,
+            )
+        }
+        if (dump.tag.fields.isNotEmpty()) {
+            item(key = "tag-metadata-title") { SectionTitle(stringResource(R.string.metadata_section)) }
+            itemsIndexed(dump.tag.fields, key = { index, _ -> "tag-field-$index" }) { _, field ->
+                ValueRow(field, ::copy)
+            }
+        }
+        dump.technologies.forEach { entity ->
+            val expanded = expandedTechnologies[entity.techName] == true
+            item(key = "tech-header:${entity.techName}") {
+                TechnologyHeader(
                     entity = entity,
-                    expandedRawChunks = expandedRawChunks,
-                    copyValue = ::copy,
+                    expanded = expanded,
+                    onToggle = { expandedTechnologies[entity.techName] = !expanded },
+                    onCopy = {
+                        export?.technologyText?.get(entity.techName)?.let {
+                            copy(entity.techName, it)
+                        }
+                    },
                 )
             }
+            if (expanded) addTechnologyDetails(
+                entity = entity,
+                expandedRawChunks = expandedRawChunks,
+                copyValue = ::copy,
+            )
+        }
+        if (dump.issues.isNotEmpty()) {
+            item(key = "dump-issues-title") { SectionTitle(stringResource(R.string.dump_issues)) }
+            itemsIndexed(dump.issues, key = { index, _ -> "dump-issue-$index" }) { _, issue ->
+                IssueRow(issue)
+            }
+        }
+    }
+}
+
+@Composable
+private fun ReaderStatusBanner(
+    title: String,
+    description: String?,
+    actionLabel: String?,
+    onAction: (() -> Unit)?,
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer),
+    ) {
+        Column(Modifier.fillMaxWidth().padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text(title, style = MaterialTheme.typography.titleMedium)
+            description?.let { Text(it, style = MaterialTheme.typography.bodyMedium) }
+            if (actionLabel != null && onAction != null) {
+                TextButton(onClick = onAction, modifier = Modifier.heightIn(min = 48.dp)) { Text(actionLabel) }
+            }
+        }
+    }
+}
+
+@Composable
+private fun DumpSummaryCard(
+    dump: NfcDump,
+    capturedAt: String,
+    onCopy: (String, String) -> Unit,
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
+    ) {
+        Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text(stringResource(R.string.result_summary_title), style = MaterialTheme.typography.titleLarge)
+            Text(
+                stringResource(readOutcomeLabelRes(dump.outcome)),
+                style = MaterialTheme.typography.headlineSmall,
+                color = MaterialTheme.colorScheme.primary,
+            )
+            Text(stringResource(R.string.technology_count, dump.technologies.size), style = MaterialTheme.typography.bodyLarge)
+            Text(stringResource(R.string.dump_summary, dump.rawBytesCaptured, dump.rawByteLimit), style = MaterialTheme.typography.bodyMedium)
+            dump.tag.idHex?.let { ValueRow(NfcField(stringResource(R.string.tag_id), it), onCopy) }
+            Text(stringResource(R.string.dump_captured_at, capturedAt), style = MaterialTheme.typography.bodySmall)
         }
     }
 }
@@ -358,16 +507,41 @@ private fun LazyListScope.addTechnologyDetails(
     copyValue: (String, String) -> Unit,
 ) {
     val result = entity.readResult
+    if (result.decodedFields.isNotEmpty()) {
+        item(key = "decoded-title:${entity.techName}") { SectionTitle(stringResource(R.string.decoded_section)) }
+        itemsIndexed(result.decodedFields, key = { index, _ -> "decoded:${entity.techName}:$index" }) { _, field ->
+            ValueRow(field, copyValue)
+        }
+    }
     if (result.metadata.isNotEmpty()) {
         item(key = "metadata-title:${entity.techName}") { SectionTitle(stringResource(R.string.metadata_section)) }
         itemsIndexed(result.metadata, key = { index, _ -> "metadata:${entity.techName}:$index" }) { _, field ->
             ValueRow(field, copyValue)
         }
     }
-    if (result.decodedFields.isNotEmpty()) {
-        item(key = "decoded-title:${entity.techName}") { SectionTitle(stringResource(R.string.decoded_section)) }
-        itemsIndexed(result.decodedFields, key = { index, _ -> "decoded:${entity.techName}:$index" }) { _, field ->
-            ValueRow(field, copyValue)
+    item(key = "coverage:${entity.techName}") {
+        SectionTitle(stringResource(R.string.coverage_section))
+        result.coverageDetails.dropLast(1).forEach { detail ->
+            Text(
+                stringResource(R.string.coverage_detail, detail.scope, detail.unit, stringResource(if (detail.isComplete) R.string.complete else R.string.partial)),
+                modifier = Modifier.padding(horizontal = 12.dp),
+            )
+            detail.expectedRange?.let {
+                Text(
+                    stringResource(R.string.expected_range, it.startInclusive, it.endExclusive, detail.unit),
+                    modifier = Modifier.padding(horizontal = 12.dp),
+                )
+            }
+        }
+        Text(
+            stringResource(R.string.coverage_detail, result.coverage.scope, result.coverage.unit, stringResource(if (result.coverage.isComplete) R.string.complete else R.string.partial)),
+            modifier = Modifier.padding(horizontal = 12.dp),
+        )
+        result.coverage.expectedRange?.let {
+            Text(
+                stringResource(R.string.expected_range, it.startInclusive, it.endExclusive, result.coverage.unit),
+                modifier = Modifier.padding(horizontal = 12.dp),
+            )
         }
     }
     if (result.rawChunks.isNotEmpty()) {
@@ -383,31 +557,6 @@ private fun LazyListScope.addTechnologyDetails(
                 expanded = expandedRawChunks[rawKey] == true,
                 onToggle = { expandedRawChunks[rawKey] = expandedRawChunks[rawKey] != true },
                 onCopy = { copyValue(chunk.label, chunk.hex) },
-            )
-        }
-    }
-    item(key = "coverage:${entity.techName}") {
-        SectionTitle(stringResource(R.string.coverage_section))
-        result.coverageDetails.dropLast(1).forEach { detail ->
-            Text(
-                "${detail.scope} (${detail.unit}) — complete=${detail.isComplete}",
-                modifier = Modifier.padding(horizontal = 12.dp),
-            )
-            detail.expectedRange?.let {
-                Text(
-                    "Expected: ${it.startInclusive}..${it.endExclusive} exclusive (${detail.unit})",
-                    modifier = Modifier.padding(horizontal = 12.dp),
-                )
-            }
-        }
-        Text(
-            "${result.coverage.scope} (${result.coverage.unit}) — complete=${result.coverage.isComplete}",
-            modifier = Modifier.padding(horizontal = 12.dp),
-        )
-        result.coverage.expectedRange?.let {
-            Text(
-                "Expected: ${it.startInclusive}..${it.endExclusive} exclusive (${result.coverage.unit})",
-                modifier = Modifier.padding(horizontal = 12.dp),
             )
         }
     }
@@ -436,16 +585,18 @@ private fun TechnologyHeader(
     Card(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(8.dp)) {
             Text(entity.shortName, style = MaterialTheme.typography.titleMedium)
-            Text("Outcome: ${entity.readResult.outcome}", style = MaterialTheme.typography.bodySmall)
+            Text(stringResource(R.string.technology_outcome, stringResource(readOutcomeLabelResource(entity.readResult.outcome))), style = MaterialTheme.typography.bodySmall)
             Text(
-                "${entity.readResult.coverage.scope} — complete=${entity.readResult.coverage.isComplete}",
+                stringResource(R.string.coverage_summary, entity.readResult.coverage.scope, stringResource(if (entity.readResult.coverage.isComplete) R.string.complete else R.string.partial)),
                 style = MaterialTheme.typography.bodySmall,
             )
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                TextButton(onClick = onToggle) {
+            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                TextButton(onClick = onToggle, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
                     Text(stringResource(if (expanded) R.string.collapse_details else R.string.expand_details))
                 }
-                TextButton(onClick = onCopy) { Text(stringResource(R.string.copy_technology)) }
+                TextButton(onClick = onCopy, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
+                    Text(stringResource(R.string.copy_technology))
+                }
             }
             Text(entity.techName, style = MaterialTheme.typography.labelSmall)
         }
@@ -531,7 +682,7 @@ private fun UnreadRangeRow(range: UnreadRange) {
         stringResource(R.string.unread_range_unknown, range.unit)
     }
     Text(
-        "${range.scope}: $bounds — ${range.reason}",
+        stringResource(R.string.unread_range_detail, range.scope, bounds, range.reason),
         modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp),
         style = MaterialTheme.typography.bodySmall,
     )
@@ -543,17 +694,47 @@ private fun ReadStatus.Failure.toMessage(): String = when (this) {
     is ReadStatus.Failure.NfcDisabledWithDump -> stringResource(R.string.nfc_disabled)
     ReadStatus.Failure.IntentUnsupported -> stringResource(R.string.intent_is_not_supported)
     is ReadStatus.Failure.IntentUnsupportedWithDump -> stringResource(R.string.intent_is_not_supported)
-    is ReadStatus.Failure.Error -> cause.localizedMessage ?: stringResource(R.string.intent_is_not_supported)
+    is ReadStatus.Failure.Error -> stringResource(R.string.read_failed)
 }
 
 @Composable
-private fun CenteredMessage(message: String) {
-    Text(
-        text = message,
-        modifier = Modifier.padding(16.dp),
-        textAlign = TextAlign.Center,
-        style = MaterialTheme.typography.headlineSmall,
-    )
+private fun NfcInformationScreen(isPrivacy: Boolean, modifier: Modifier = Modifier) {
+    val uriHandler = LocalUriHandler.current
+    val context = LocalContext.current
+    val contactUrl = stringResource(R.string.privacy_contact_url)
+    val contactFailure = stringResource(R.string.privacy_link_failed)
+    val headings = if (isPrivacy) {
+        listOf(R.string.privacy_overview_title, R.string.privacy_network_title, R.string.privacy_retention_title, R.string.privacy_sharing_title, R.string.privacy_deletion_title, R.string.privacy_contact_title)
+    } else {
+        listOf(R.string.help_read_title, R.string.help_result_title, R.string.help_coverage_title, R.string.help_export_title, R.string.help_safety_title)
+    }
+    val paragraphs = if (isPrivacy) {
+        listOf(R.string.privacy_overview, R.string.privacy_network, R.string.privacy_retention, R.string.privacy_sharing, R.string.privacy_deletion, R.string.privacy_contact)
+    } else {
+        listOf(R.string.help_read, R.string.help_result, R.string.help_coverage, R.string.help_export, R.string.help_safety)
+    }
+    LazyColumn(
+        modifier = modifier.fillMaxSize(),
+        contentPadding = PaddingValues(horizontal = 20.dp, vertical = 16.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        itemsIndexed(headings) { index, heading ->
+            Text(stringResource(heading), style = MaterialTheme.typography.titleLarge, color = MaterialTheme.colorScheme.primary)
+            Text(stringResource(paragraphs[index]), style = MaterialTheme.typography.bodyLarge)
+        }
+        if (isPrivacy) {
+            item {
+                TextButton(
+                    onClick = {
+                        if (runCatching { uriHandler.openUri(contactUrl) }.isFailure) {
+                            Toast.makeText(context, contactFailure, Toast.LENGTH_SHORT).show()
+                        }
+                    },
+                    modifier = Modifier.heightIn(min = 48.dp),
+                ) { Text(stringResource(R.string.privacy_contact_link)) }
+            }
+        }
+    }
 }
 
 private const val RAW_PREVIEW_HEX_CHARS = 256

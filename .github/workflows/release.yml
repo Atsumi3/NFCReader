@@ -11,6 +11,21 @@ on:
           - minor
           - major
         default: patch
+      artifact_only:
+        description: Build and upload an artifact without bumping or publishing a release
+        type: boolean
+        default: false
+      artifact_format:
+        description: Artifact format when artifact_only is enabled
+        type: choice
+        options:
+          - apk
+          - aab
+        default: aab
+      play_version_code:
+        description: Explicit Play versionCode; required for AAB artifacts
+        type: string
+        default: ""
 
 permissions:
   contents: write
@@ -22,7 +37,8 @@ jobs:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: develop
+          ref: ${{ inputs.artifact_only && github.ref || 'develop' }}
+          persist-credentials: ${{ !inputs.artifact_only }}
 
       - name: Set up JDK 21
         uses: actions/setup-java@d1374f8ac74474200d16ef8ecee22c7ae7a51880 # v6.3.0
@@ -44,11 +60,16 @@ jobs:
         id: version
         env:
           BUMP: ${{ inputs.bump }}
+          ARTIFACT_ONLY: ${{ inputs.artifact_only }}
         run: |
           file=gradle.properties
           major=$(grep '^VERSION_MAJOR=' "$file" | cut -d= -f2)
           minor=$(grep '^VERSION_MINOR=' "$file" | cut -d= -f2)
           patch=$(grep '^VERSION_PATCH=' "$file" | cut -d= -f2)
+          if [[ "$ARTIFACT_ONLY" == "true" ]]; then
+            echo "version=$major.$minor.$patch" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
           case "$BUMP" in
             major) major=$((major + 1)); minor=0; patch=0 ;;
             minor) minor=$((minor + 1)); patch=0 ;;
@@ -65,6 +86,7 @@ jobs:
         run: echo "$KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/release.jks"
 
       - name: Test and build release APK
+        if: ${{ !inputs.artifact_only }}
         env:
           RELEASE_KEYSTORE_FILE: ${{ runner.temp }}/release.jks
           RELEASE_KEYSTORE_PASSWORD: ${{ secrets.RELEASE_KEYSTORE_PASSWORD }}
@@ -72,8 +94,70 @@ jobs:
           RELEASE_KEY_PASSWORD: ${{ secrets.RELEASE_KEY_PASSWORD }}
         run: ./gradlew testDebugUnitTest assembleRelease
 
+      - name: Validate artifact inputs
+        if: ${{ inputs.artifact_only }}
+        env:
+          FORMAT: ${{ inputs.artifact_format }}
+          PLAY_VERSION_CODE: ${{ inputs.play_version_code }}
+        run: |
+          if [[ "$FORMAT" == "aab" && ! "$PLAY_VERSION_CODE" =~ ^[1-9][0-9]{0,9}$ ]]; then
+            echo "AAB artifacts require an explicit positive play_version_code."
+            exit 1
+          fi
+          if [[ -n "$PLAY_VERSION_CODE" && ( ! "$PLAY_VERSION_CODE" =~ ^[1-9][0-9]{0,9}$ || "$PLAY_VERSION_CODE" -gt 2100000000 ) ]]; then
+            echo "play_version_code must be from 1 to 2100000000."
+            exit 1
+          fi
+
+      - name: Test and build signed artifact
+        if: ${{ inputs.artifact_only }}
+        env:
+          RELEASE_KEYSTORE_FILE: ${{ runner.temp }}/release.jks
+          RELEASE_KEYSTORE_PASSWORD: ${{ secrets.RELEASE_KEYSTORE_PASSWORD }}
+          RELEASE_KEY_ALIAS: ${{ secrets.RELEASE_KEY_ALIAS }}
+          RELEASE_KEY_PASSWORD: ${{ secrets.RELEASE_KEY_PASSWORD }}
+          FORMAT: ${{ inputs.artifact_format }}
+          PLAY_VERSION_CODE: ${{ inputs.play_version_code }}
+        run: |
+          args=(testDebugUnitTest)
+          if [[ "$FORMAT" == "aab" ]]; then args+=(bundleRelease); else args+=(assembleRelease); fi
+          if [[ -n "$PLAY_VERSION_CODE" ]]; then args+=("-PplayVersionCode=$PLAY_VERSION_CODE"); fi
+          ./gradlew "${args[@]}"
+
+      - name: Stage and verify signed artifact
+        id: store-artifact
+        if: ${{ inputs.artifact_only }}
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+          FORMAT: ${{ inputs.artifact_format }}
+          SOURCE_SHA: ${{ github.sha }}
+        run: |
+          if [[ "$FORMAT" == "aab" ]]; then
+            source=app/build/outputs/bundle/release/app-release.aab
+            extension=aab
+            jarsigner -verify "$source" | grep -q 'jar verified\.'
+          else
+            source=app/build/outputs/apk/release/app-release.apk
+            extension=apk
+            "$ANDROID_HOME/build-tools/37.0.0/apksigner" verify "$source"
+          fi
+          name="signed-release-$FORMAT-$SOURCE_SHA.$extension"
+          cp "$source" "$RUNNER_TEMP/$name"
+          echo "name=$name" >> "$GITHUB_OUTPUT"
+          echo "path=$RUNNER_TEMP/$name" >> "$GITHUB_OUTPUT"
+
+      - name: Upload signed artifact
+        if: ${{ inputs.artifact_only }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: signed-release-${{ inputs.artifact_format }}-${{ github.sha }}
+          path: ${{ steps.store-artifact.outputs.path }}
+          if-no-files-found: error
+          retention-days: 7
+
       - name: Stage APK
         id: apk
+        if: ${{ !inputs.artifact_only }}
         env:
           VERSION: ${{ steps.version.outputs.version }}
         run: |
@@ -82,6 +166,7 @@ jobs:
           echo "name=$name" >> "$GITHUB_OUTPUT"
 
       - name: Commit version bump
+        if: ${{ !inputs.artifact_only }}
         env:
           VERSION: ${{ steps.version.outputs.version }}
         run: |
@@ -92,6 +177,7 @@ jobs:
           git push origin develop
 
       - name: Create release
+        if: ${{ !inputs.artifact_only }}
         env:
           GH_TOKEN: ${{ github.token }}
           VERSION: ${{ steps.version.outputs.version }}

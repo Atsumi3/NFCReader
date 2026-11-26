@@ -33,6 +33,13 @@ class NfcReadViewModelTest {
     }
 
     @Test
+    fun nfcEnabledReturnsToWaitingAfterSettingsChange() {
+        viewModel.onNfcDisabled()
+        viewModel.onNfcEnabled()
+        assertEquals(ReadStatus.Idle, viewModel.state.value)
+    }
+
+    @Test
     fun intentIsIgnoredOnceNfcDisabled() {
         viewModel.onNfcDisabled()
         viewModel.onNewIntent(null)

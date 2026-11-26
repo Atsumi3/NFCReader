@@ -1,0 +1,4 @@
+<resources>
+    <bool name="nfc_dispatch_legacy_enabled">false</bool>
+    <bool name="nfc_dispatch_protected_enabled">true</bool>
+</resources>

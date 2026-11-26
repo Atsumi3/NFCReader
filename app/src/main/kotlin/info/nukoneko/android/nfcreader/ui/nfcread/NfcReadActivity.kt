@@ -3,6 +3,7 @@ package info.nukoneko.android.nfcreader.ui.nfcread
 import android.app.PendingIntent
 import android.content.Intent
 import android.nfc.NfcAdapter
+import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -22,7 +23,12 @@ class NfcReadActivity : ComponentActivity() {
     }
 
     private val pendingIntent: PendingIntent by lazy {
-        val intent = Intent(this, javaClass)
+        val dispatchActivity = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.CINNAMON_BUN) {
+            ProtectedNfcDispatchActivity::class.java
+        } else {
+            NfcDispatchActivity::class.java
+        }
+        val intent = Intent(this, dispatchActivity)
             .addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP)
         // Foreground dispatch needs the system to inject the Tag extra into the
         // Intent, so the PendingIntent must be mutable on API 31+.

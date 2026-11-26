@@ -13,8 +13,11 @@ object NfcDumpTextFormatter {
         dump.tag.fields.forEach { appendLine("Tag.${it.label}: ${it.value ?: "-"}") }
         appendLine("Tag technologies: ${dump.tag.techNames.joinToString()}")
         dump.issues.forEach { appendLine("Dump issue [${it.kind}] ${it.operation.orEmpty()}: ${it.message}") }
-        dump.technologies.forEach { appendLine().append(formatTechnology(it)) }
-    }.trimEnd()
+        dump.technologies.forEachIndexed { index, entity ->
+            if (index == 0) appendLine()
+            append(formatTechnology(entity)).append('\n')
+        }
+    }.removeSuffix("\n")
 
     fun formatTechnology(entity: NfcEntity): String = buildString {
         val result = entity.readResult
@@ -42,5 +45,5 @@ object NfcDumpTextFormatter {
                     ": ${range.reason}"
             )
         }
-    }.trimEnd()
+    }.removeSuffix("\n")
 }

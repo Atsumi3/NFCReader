@@ -18,6 +18,23 @@ import org.junit.Test
 
 class NfcDumpTextFormatterTest {
     @Test
+    fun preservesTrailingWhitespaceInDecodedValues() {
+        listOf("decoded value  ", "decoded line\n", "decoded line\r\n").forEach { value ->
+            val entity = entityWith(value)
+            val emptyEntity = entityWith("")
+
+            assertEquals(
+                NfcDumpTextFormatter.formatTechnology(emptyEntity) + value,
+                NfcDumpTextFormatter.formatTechnology(entity),
+            )
+            assertEquals(
+                NfcDumpTextFormatter.format(dumpWith(emptyEntity)) + value,
+                NfcDumpTextFormatter.format(dumpWith(entity)),
+            )
+        }
+    }
+
+    @Test
     fun includesRawDecodedCoverageIssuesAndUnreadRanges() {
         val dump = NfcDump(
             tag = NfcTagMetadata(idHex = "0102", techNames = listOf("android.nfc.tech.NfcA")),

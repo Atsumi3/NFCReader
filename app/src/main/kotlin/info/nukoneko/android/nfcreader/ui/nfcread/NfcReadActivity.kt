@@ -43,7 +43,16 @@ class NfcReadActivity : ComponentActivity() {
             NfcReaderTheme {
                 val state by viewModel.state.collectAsStateWithLifecycle()
                 val readTime by viewModel.readTime.collectAsStateWithLifecycle()
-                NfcReadScreen(state = state, readTime = readTime)
+                val dumpFileExportResult by viewModel.dumpFileExportResult.collectAsStateWithLifecycle()
+                NfcReadScreen(
+                    state = state,
+                    readTime = readTime,
+                    onStopReading = viewModel::stopReading,
+                    onPrepareDumpFileExport = { content -> viewModel.preparePendingDumpFileExport(cacheDir, content) },
+                    onCompleteDumpFileExport = { uri -> viewModel.completePendingDumpFileExport(cacheDir, contentResolver, uri) },
+                    dumpFileExportResult = dumpFileExportResult,
+                    onAcknowledgeDumpFileExportResult = viewModel::acknowledgeDumpFileExportResult,
+                )
             }
         }
         if (savedInstanceState == null) {

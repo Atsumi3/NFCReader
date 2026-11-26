@@ -50,6 +50,7 @@ class EmvTlvTest {
         )
         // SFI 1, record 1 -> P2 = (1 shl 3) or 0x04 = 0x0C
         assertArrayEquals(hexToBytes("00B2010C00"), buildReadRecord(1, 1))
+        assertArrayEquals(hexToBytes("80CA9F3600"), buildGetData(0x9F36))
     }
 
     @Test
@@ -59,5 +60,58 @@ class EmvTlvTest {
         assertEquals(1, tlv.size)
         assertEquals("9F38", tlv[0].tag)
         assertArrayEquals(hexToBytes("AABB"), tlv[0].value)
+    }
+
+    @Test
+    fun truncatedTlvRetainsTheUnparsedWireBytes() {
+        val raw = hexToBytes("5A04AABB")
+        val parsed = parseTlvBounded(raw)
+
+        assertEquals("5A", parsed.nodes.single().tag)
+        assertTrue(parsed.issues.any { it.contains("exceeds remaining input") })
+        assertArrayEquals(raw, parsed.remainders.single().bytes)
+    }
+
+    @Test
+    fun overflowingBerLengthIsRejectedWithoutDroppingItsRawBytes() {
+        val raw = hexToBytes("5A84FFFFFFFF")
+        val parsed = parseTlvBounded(raw)
+
+        assertTrue(parsed.issues.any { it.contains("exceeds remaining input") })
+        assertArrayEquals(raw, parsed.remainders.single().bytes)
+    }
+
+    @Test
+    fun tlvDepthAndNodeLimitsStopParsingWithRemainders() {
+        val nested = parseTlvBounded(hexToBytes("E1035A0101"), maxDepth = 0)
+        assertEquals(emptyList<Tlv>(), nested.nodes.single().children)
+        assertTrue(nested.issues.any { it.contains("depth limit") })
+        assertArrayEquals(hexToBytes("5A0101"), nested.remainders.single().bytes)
+
+        val tooMany = parseTlvBounded(hexToBytes("5A01AA5F2401BB"), maxNodes = 1)
+        assertEquals(1, tooMany.nodes.size)
+        assertTrue(tooMany.issues.any { it.contains("node limit") })
+        assertArrayEquals(hexToBytes("5F2401BB"), tooMany.remainders.single().bytes)
+    }
+
+    @Test
+    fun logDolUsesTagLengthPairsAndBoundsMalformedInput() {
+        val dol = parseDolBounded(hexToBytes("9A039F02065F2A02"))
+        assertEquals(listOf("9A", "9F02", "5F2A"), dol.entries.map { it.tag })
+        assertEquals(listOf(3, 6, 2), dol.entries.map { it.requestedLength })
+        assertEquals(11, dol.totalRequestedLength)
+
+        val malformed = parseDolBounded(hexToBytes("9F"))
+        assertTrue(malformed.issues.isNotEmpty())
+        assertArrayEquals(hexToBytes("9F"), malformed.remainder)
+    }
+
+    @Test
+    fun shortApduResponseIsNotTreatedAsAStatusWord() {
+        val response = ApduResponse(hexToBytes("90"))
+        assertEquals(false, response.hasStatusWord)
+        assertEquals("----", response.statusWord)
+        assertEquals(false, response.isSuccess)
+        assertArrayEquals(hexToBytes("90"), response.raw)
     }
 }

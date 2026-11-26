@@ -135,9 +135,9 @@ internal class IsoDepEmvProtocol(
         context: TechReadContext,
     ) {
         var sentRecords = 0
-        val sfis = (MIN_SFI..MAX_SFI).toMutableSet()
-        logEntry?.sfi?.let(sfis::add)
-        for (sfi in sfis.sorted()) {
+        val genericSfis = (MIN_SFI..MAX_SFI).filterNot { it == logEntry?.sfi }
+        val sfis = logEntry?.sfi?.let { listOf(it) + genericSfis } ?: genericSfis
+        for (sfi in sfis) {
             val maxRecord = logEntry?.takeIf { it.sfi == sfi }?.maxRecords ?: MAX_RECORD
             for (record in MIN_RECORD..maxRecord) {
                 if (session.stopped) return
@@ -151,16 +151,6 @@ internal class IsoDepEmvProtocol(
                                 record.toLong(),
                                 maxRecord.toLong() + 1L,
                                 "Per-application READ RECORD limit reached.",
-                            )
-                        )
-                    } else if (logEntry != null && logEntry.sfi > sfi) {
-                        context.addUnreadRange(
-                            UnreadRange(
-                                "$prefix log SFI ${logEntry.sfi} records",
-                                "record",
-                                MIN_RECORD.toLong(),
-                                logEntry.maxRecords.toLong() + 1L,
-                                "Per-application READ RECORD limit reached before the advertised log range.",
                             )
                         )
                     }

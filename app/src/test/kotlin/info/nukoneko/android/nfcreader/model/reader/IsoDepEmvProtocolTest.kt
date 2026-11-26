@@ -270,12 +270,46 @@ class IsoDepEmvProtocolTest {
         val logRecords = recordCommands.filter { ((it[3].toInt() and 0xFF) ushr 3) == 30 }
         val result = context.buildResult()
         assertEquals(160, recordCommands.size)
-        assertEquals((1..150).toList(), logRecords.map { it[2].toInt() and 0xFF })
+        assertEquals((1..160).toList(), logRecords.map { it[2].toInt() and 0xFF })
+        assertTrue(recordCommands.all { ((it[3].toInt() and 0xFF) ushr 3) == 30 })
         assertTrue(result.issues.any { it.kind == ReadIssueKind.BUDGET_EXHAUSTED })
         assertTrue(result.unreadRanges.any {
             it.scope == "IsoDep.app[0] log SFI 30 records" &&
-                it.startInclusive == 151L && it.endExclusive == 256L
+                it.startInclusive == 161L && it.endExclusive == 256L
         })
+    }
+
+    @Test
+    fun advertisedLogSfiIsReadBeforeSuccessfulGenericScans() {
+        val visa = hexToBytes("A0000000031010")
+        val commands = mutableListOf<ByteArray>()
+        val context = newContext()
+        IsoDepEmvReader().readWithTransport(
+            transport = ReadOnlyTransport { command ->
+                commands += command.copyOf()
+                when {
+                    command.contentEquals(SELECT_PPSE) -> ppseResponse(visa)
+                    (command[1].toInt() and 0xFF) == 0xA4 -> fciResponse(visa, byteArrayOf(30, 17))
+                    (command[0].toInt() and 0xFF) == 0x80 && (command[1].toInt() and 0xFF) == 0xCA ->
+                        getDataResponse(((command[2].toInt() and 0xFF) shl 8) or (command[3].toInt() and 0xFF))
+                    (command[1].toInt() and 0xFF) == 0xB2 -> hexToBytes("9000")
+                    else -> error("Unexpected APDU")
+                }
+            },
+            maxTransceiveLength = 255,
+            context = context,
+        )
+
+        val recordCommands = commands.filter { (it[1].toInt() and 0xFF) == 0xB2 }
+        val firstRecords = recordCommands.take(17)
+        val logRecords = recordCommands.filter { ((it[3].toInt() and 0xFF) ushr 3) == 30 }
+        val result = context.buildResult()
+        assertEquals(160, recordCommands.size)
+        assertTrue(firstRecords.all { ((it[3].toInt() and 0xFF) ushr 3) == 30 })
+        assertEquals((1..17).toList(), logRecords.map { it[2].toInt() and 0xFF })
+        assertEquals(143, recordCommands.count { ((it[3].toInt() and 0xFF) ushr 3) != 30 })
+        assertTrue(result.issues.any { it.kind == ReadIssueKind.BUDGET_EXHAUSTED })
+        assertTrue(result.unreadRanges.none { it.scope == "IsoDep.app[0] log SFI 30 records" })
     }
 
     @Test

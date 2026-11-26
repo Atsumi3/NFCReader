@@ -40,11 +40,21 @@ class NfcReadActivity : ComponentActivity() {
                 NfcReadScreen(state = state, readTime = readTime)
             }
         }
+        if (savedInstanceState == null) {
+            handleNfcIntent(intent)
+        }
     }
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
-        viewModel.onNewIntent(intent)
+        setIntent(intent)
+        handleNfcIntent(intent)
+    }
+
+    private fun handleNfcIntent(intent: Intent) {
+        if (intent.action in NFC_DISCOVERY_ACTIONS) {
+            viewModel.onNewIntent(intent)
+        }
     }
 
     override fun onResume() {
@@ -60,5 +70,13 @@ class NfcReadActivity : ComponentActivity() {
     override fun onPause() {
         super.onPause()
         nfcAdapter?.disableForegroundDispatch(this)
+    }
+
+    companion object {
+        private val NFC_DISCOVERY_ACTIONS = setOf(
+            NfcAdapter.ACTION_NDEF_DISCOVERED,
+            NfcAdapter.ACTION_TECH_DISCOVERED,
+            NfcAdapter.ACTION_TAG_DISCOVERED,
+        )
     }
 }

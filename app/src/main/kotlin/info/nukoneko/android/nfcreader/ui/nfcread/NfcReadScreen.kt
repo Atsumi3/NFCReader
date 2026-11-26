@@ -1,6 +1,5 @@
 package info.nukoneko.android.nfcreader.ui.nfcread
 
-import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Intent
 import android.net.Uri
@@ -202,7 +201,7 @@ private fun NfcDumpContent(
         }
         val copied = clipboard?.let { manager ->
             runCatching {
-                manager.setPrimaryClip(ClipData.newPlainText(label, value))
+                manager.setPrimaryClip(createSensitivePlainTextClip(label, value))
                 true
             }.getOrDefault(false)
         } ?: false

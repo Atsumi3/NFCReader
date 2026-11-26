@@ -202,6 +202,36 @@ class IsoDepEmvProtocolTest {
     }
 
     @Test
+    fun advertisedLogSfiWithinGeneralRangeUsesAdvertisedRecordCount() {
+        val visa = hexToBytes("A0000000031010")
+        val commands = mutableListOf<ByteArray>()
+        IsoDepEmvReader().readWithTransport(
+            transport = ReadOnlyTransport { command ->
+                commands += command.copyOf()
+                when {
+                    command.contentEquals(SELECT_PPSE) -> ppseResponse(visa)
+                    (command[1].toInt() and 0xFF) == 0xA4 -> fciResponse(visa, byteArrayOf(5, 2))
+                    (command[0].toInt() and 0xFF) == 0x80 && (command[1].toInt() and 0xFF) == 0xCA ->
+                        getDataResponse(((command[2].toInt() and 0xFF) shl 8) or (command[3].toInt() and 0xFF))
+                    (command[1].toInt() and 0xFF) == 0xB2 -> {
+                        val record = command[2].toInt() and 0xFF
+                        val sfi = (command[3].toInt() and 0xFF) ushr 3
+                        if (sfi == 5 && record in 1..2) hexToBytes("9000") else hexToBytes("6A83")
+                    }
+                    else -> error("Unexpected APDU")
+                }
+            },
+            maxTransceiveLength = 255,
+            context = newContext(),
+        )
+
+        val advertisedRecords = commands.filter {
+            (it[1].toInt() and 0xFF) == 0xB2 && ((it[3].toInt() and 0xFF) ushr 3) == 5
+        }
+        assertEquals(listOf(1, 2), advertisedRecords.map { it[2].toInt() and 0xFF })
+    }
+
+    @Test
     fun transmitLimitRejectsPpseBeforeSending() {
         val commands = mutableListOf<ByteArray>()
         val context = newContext()

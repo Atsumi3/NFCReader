@@ -134,7 +134,7 @@ internal class IsoDepEmvProtocol(
         val sfis = (MIN_SFI..MAX_SFI).toMutableSet()
         logEntry?.sfi?.let(sfis::add)
         for (sfi in sfis.sorted()) {
-            val maxRecord = if (sfi > MAX_SFI) logEntry?.maxRecords ?: 0 else MAX_RECORD
+            val maxRecord = logEntry?.takeIf { it.sfi == sfi }?.maxRecords ?: MAX_RECORD
             for (record in MIN_RECORD..maxRecord) {
                 if (session.stopped) return
                 if (sentRecords >= MAX_RECORD_REQUESTS_PER_AID) {

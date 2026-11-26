@@ -270,10 +270,6 @@ class NfcReadViewModel(
         else -> null
     }
 
-    internal companion object {
-        const val PENDING_EXPORT_TOKEN_KEY = "pending_dump_file_export_token"
-    }
-
     private fun readTagMetadata(
         tag: Tag,
         techNames: List<String>,
@@ -441,6 +437,7 @@ class NfcReadViewModel(
     }
 
     companion object {
+        internal const val PENDING_EXPORT_TOKEN_KEY = "pending_dump_file_export_token"
         private const val DATE_FORMAT = "yyyy-MM-dd HH:mm:ss.SSS"
         private const val LOG_TAG = "NfcReadViewModel"
     }

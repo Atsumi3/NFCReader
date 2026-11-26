@@ -18,6 +18,7 @@ internal class IsoDepEmvProtocol(
 ) {
     fun read(transport: ReadOnlyTransport, context: TechReadContext) {
         val session = ApduSession(transport, context, maxTransceiveLength)
+        try {
         val ppse = session.exchange(SELECT_PPSE, "SELECT PPSE")
         if (ppse == null) {
             finish(context)
@@ -115,6 +116,11 @@ internal class IsoDepEmvProtocol(
             readRecords(session, prefix, logEntry, logDol, context)
         }
         finish(context)
+        } catch (cancelled: CancellationException) {
+            context.addUnreadRange(UnreadRange("ISO-DEP read-only exploration", "APDU", reason = "Read cancelled; no further APDUs were requested."))
+            finish(context)
+            throw cancelled
+        }
     }
 
     private fun readRecords(
@@ -351,6 +357,7 @@ internal class IsoDepEmvProtocol(
                 } catch (exception: ReadBudgetExceededException) {
                     throw exception
                 } catch (exception: CancellationException) {
+                    context.addUnreadRange(UnreadRange("ISO-DEP exchange", "APDU", reason = "Read cancelled during $currentOperation; no further APDUs were requested."))
                     throw exception
                 } catch (exception: Exception) {
                     context.addIssue(

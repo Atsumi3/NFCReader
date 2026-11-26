@@ -33,6 +33,8 @@ class NdefReader : TechReader {
             context.reserveTransceive("NDEF live message")
             ndef.ndefMessage
         } catch (exception: CancellationException) {
+            context.addUnreadRange(info.nukoneko.android.nfcreader.model.entity.UnreadRange("NDEF message", "record", reason = "Read cancelled before the live message was obtained."))
+            context.setCoverage(ReadCoverage.unknown("NDEF live message read"))
             throw exception
         } catch (exception: ReadBudgetExceededException) {
             throw exception
@@ -77,13 +79,16 @@ class NdefReader : TechReader {
 
         val records = message.records
         val includedRecords = records.take(MAX_RECORDS)
+        var completedRecordCount = 0
         context.addDecodedFields(
             listOf(
                 NfcField("NDEF.recordCount", records.size.toString()),
                 NfcField("NDEF.captureScope", "Android-provided NDEF message records only"),
             )
         )
+        try {
         includedRecords.forEachIndexed { index, record ->
+            context.checkpoint()
             val tag = "NDEF[$index]"
             val payload = record.payload
             val payloadDecode = decodeNdefPayload(record.tnf.toInt(), record.type, payload)
@@ -136,6 +141,29 @@ class NdefReader : TechReader {
                 )
                 context.markPartial()
             }
+            completedRecordCount = index + 1
+        }
+        } catch (cancelled: CancellationException) {
+            if (completedRecordCount < records.size) {
+                context.addUnreadRange(
+                    info.nukoneko.android.nfcreader.model.entity.UnreadRange(
+                        "NDEF records",
+                        "record",
+                        completedRecordCount.toLong(),
+                        records.size.toLong(),
+                        "Read cancelled; remaining records were not decoded.",
+                    )
+                )
+            }
+            context.setCoverage(
+                ReadCoverage(
+                    scope = "Android-provided NDEF message records",
+                    unit = "record",
+                    expectedRange = ReadRange(0, records.size.toLong()),
+                    completedRanges = listOf(ReadRange(0, completedRecordCount.toLong())),
+                )
+            )
+            throw cancelled
         }
         if (records.size > includedRecords.size) {
             context.addUnreadRange(

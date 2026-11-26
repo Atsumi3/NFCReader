@@ -12,6 +12,7 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
+import java.util.concurrent.CancellationException
 
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [Build.VERSION_CODES.VANILLA_ICE_CREAM])
@@ -130,6 +131,36 @@ class IsoDepEmvProtocolTest {
     }
 
     @Test
+    fun cancellationAfterPpseKeepsRawAndMarksRemainingApdusUnread() {
+        val commands = mutableListOf<ByteArray>()
+        var cancelled = false
+        val context = newContext { if (cancelled) throw CancellationException("cancelled") }
+
+        try {
+            IsoDepEmvReader().readWithTransport(
+                transport = ReadOnlyTransport { command ->
+                    commands += command.copyOf()
+                    if (command.contentEquals(SELECT_PPSE)) {
+                        cancelled = true
+                        ppseResponse(hexToBytes("A0000000031010"))
+                    } else {
+                        error("No APDU may be sent after cancellation")
+                    }
+                },
+                maxTransceiveLength = 255,
+                context = context,
+            )
+        } catch (_: CancellationException) {
+        }
+
+        val result = context.buildResult()
+        assertEquals(1, commands.size)
+        assertTrue(result.rawChunks.any { it.label == "ISO-DEP APDU response" })
+        assertTrue(result.unreadRanges.any { it.reason.contains("cancelled", ignoreCase = true) })
+        assertTrue(result.coverage.expectedRange == null)
+    }
+
+    @Test
     fun advertisedLogSfi30ReadsOnlyItsAdvertisedRecordCount() {
         val visa = hexToBytes("A0000000031010")
         val commands = mutableListOf<ByteArray>()
@@ -187,10 +218,10 @@ class IsoDepEmvProtocolTest {
         assertTrue(context.buildResult().issues.any { it.kind == ReadIssueKind.UNSUPPORTED_TECHNOLOGY })
     }
 
-    private fun newContext() = TechReadContext(
+    private fun newContext(cancellationCheck: () -> Unit = {}) = TechReadContext(
         RawCaptureBudget(),
         FieldValueBudget(),
-        cancellationCheck = {},
+        cancellationCheck = cancellationCheck,
     )
 
     private fun status(data: ByteArray = byteArrayOf()) = data + hexToBytes("9000")

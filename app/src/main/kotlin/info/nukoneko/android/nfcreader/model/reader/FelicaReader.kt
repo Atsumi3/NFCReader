@@ -51,7 +51,13 @@ class FelicaReader : TechReader {
                 NfcField("Felica.systemCodeByteOrder", "Big-endian on the command/response boundary"),
             )
         )
-        val firstPoll = poll(boundedTransport, maxTransceiveLength, discoveredSystem, context)
+        val firstPoll = try {
+            poll(boundedTransport, maxTransceiveLength, discoveredSystem, context)
+        } catch (cancelled: kotlinx.coroutines.CancellationException) {
+            context.addUnreadRange(UnreadRange("FeliCa system polling", "response", reason = "Read cancelled before the discovered system was polled."))
+            context.setCoverage(ReadCoverage.unknown("FeliCa system polling"))
+            throw cancelled
+        }
         if (firstPoll == null) {
             context.setCoverage(ReadCoverage.unknown("FeliCa system polling"))
             context.markPartial()
@@ -66,6 +72,8 @@ class FelicaReader : TechReader {
                 }
             }
         } catch (exception: kotlinx.coroutines.CancellationException) {
+            context.addUnreadRange(UnreadRange("FeliCa system enumeration", "response", reason = "Read cancelled before system enumeration completed."))
+            context.setCoverage(ReadCoverage.unknown("FeliCa system enumeration"))
             throw exception
         } catch (exception: ReadBudgetExceededException) {
             throw exception
@@ -94,6 +102,7 @@ class FelicaReader : TechReader {
         val serviceBudget = ServiceBudget()
         val completedSystems = mutableListOf<ReadRange>()
         var index = 0
+        try {
         while (index < systems.size) {
             context.checkpoint()
             val systemCode = systems[index]
@@ -114,13 +123,28 @@ class FelicaReader : TechReader {
                     NfcField("$prefix.returnedSystemCode", polling.returnedSystemCode?.let { "0x%04X".format(it) } ?: "not returned"),
                 )
             )
-            completedSystems += ReadRange(index.toLong(), index + 1L)
             if (systemCode == SUICA_SYSTEM_CODE) {
                 readSuicaHistory(boundedTransport, maxTransceiveLength, polling.idm, prefix, context)
             }
             scanStandardServices(boundedTransport, maxTransceiveLength, polling.idm, systemCode, prefix, context, serviceBudget)
             if (context.buildResult().issues.any { it.kind == ReadIssueKind.TAG_LOST }) break
+            completedSystems += ReadRange(index.toLong(), index + 1L)
             index += 1
+        }
+        } catch (cancelled: kotlinx.coroutines.CancellationException) {
+            if (index < systems.size) {
+                context.addUnreadRange(UnreadRange("FeliCa systems", "system", index.toLong(), systems.size.toLong(), "Read cancelled; remaining systems were not requested."))
+            }
+            context.setCoverage(
+                ReadCoverage(
+                    scope = "FeliCa systems advertised by Request System Code",
+                    unit = "system",
+                    expectedRange = ReadRange(0, systems.size.toLong()),
+                    completedRanges = completedSystems,
+                )
+            )
+            context.addIssue(ReadIssue(ReadIssueKind.COVERAGE_UNKNOWN, "FeliCa service capacity is unknown; the bounded read is not a complete tag dump."))
+            throw cancelled
         }
         if (systems.size == MAX_SYSTEMS && returnedSystems.orEmpty().size > MAX_SYSTEMS) {
             context.addUnreadRange(
@@ -160,6 +184,7 @@ class FelicaReader : TechReader {
         val readable = mutableListOf<FelicaServiceKeyVersion>()
         val candidateCoverage = mutableListOf<ReadRange>()
         var offset = 0
+        try {
         while (offset < candidates.size) {
             context.checkpoint()
             if (budget.batches >= 64 || !reserveServiceExchange(context, budget, prefix)) break
@@ -204,6 +229,13 @@ class FelicaReader : TechReader {
             }
             offset += batch.size
         }
+        } catch (cancelled: kotlinx.coroutines.CancellationException) {
+            if (offset < candidates.size) {
+                context.addUnreadRange(UnreadRange("FeliCa service candidates system 0x%04X".format(systemCode), "candidate", offset.toLong(), candidates.size.toLong(), "Read cancelled; remaining service candidates were not queried."))
+            }
+            context.setCoverage(ReadCoverage("$prefix standard service candidates", "candidate", ReadRange(0, candidates.size.toLong()), candidateCoverage))
+            throw cancelled
+        }
         if (offset < candidates.size) {
             context.addUnreadRange(UnreadRange("FeliCa service candidates system 0x%04X".format(systemCode), "candidate", offset.toLong(), candidates.size.toLong(), "Bounded candidate search stopped."))
         }
@@ -211,6 +243,8 @@ class FelicaReader : TechReader {
 
         for (service in readable) {
             var block = 0
+            val completedBlocks = mutableListOf<ReadRange>()
+            try {
             while (block < 256 && budget.blocks < 4096) {
                 context.checkpoint()
                 val location = "$prefix service 0x%04X block $block".format(service.serviceCode)
@@ -243,7 +277,23 @@ class FelicaReader : TechReader {
                 val data = parsed.blocks.single()
                 context.captureRaw("FeliCa service block", data, location)
                 context.addDecodedFields(listOf(NfcField("$prefix.service[0x%04X].block[$block].raw".format(service.serviceCode), data.toHexString())))
+                completedBlocks += ReadRange(block.toLong(), block + 1L)
                 block += 1
+            }
+            } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                val unreadFrom = completedBlocks.maxOfOrNull { it.endExclusive }?.toLong() ?: block.toLong()
+                if (unreadFrom < 256L) {
+                    context.addUnreadRange(UnreadRange("system 0x%04X service 0x%04X".format(systemCode, service.serviceCode), "block", unreadFrom, 256L, "Read cancelled; remaining blocks were not requested."))
+                }
+                context.setCoverage(
+                    ReadCoverage(
+                        "$prefix service 0x%04X blocks".format(service.serviceCode),
+                        "block",
+                        ReadRange(0, 256),
+                        completedBlocks,
+                    )
+                )
+                throw cancelled
             }
             if (block == 256) {
                 context.addIssue(ReadIssue(ReadIssueKind.COVERAGE_UNKNOWN, "The 256-block application cap was reached; service capacity is unknown.", "service 0x%04X".format(service.serviceCode)))
@@ -307,6 +357,7 @@ class FelicaReader : TechReader {
     ) {
         val completed = mutableListOf<ReadRange>()
         var nextBlock = 0
+        try {
         while (nextBlock < HISTORY_BLOCKS) {
             context.checkpoint()
             val requested = (nextBlock until minOf(nextBlock + READ_CHUNK, HISTORY_BLOCKS)).toList()
@@ -373,6 +424,20 @@ class FelicaReader : TechReader {
                 )
                 break
             }
+        }
+        } catch (cancelled: kotlinx.coroutines.CancellationException) {
+            if (nextBlock < HISTORY_BLOCKS) {
+                context.addUnreadRange(UnreadRange("FeliCa service 0x%04X".format(SUICA_HISTORY_SERVICE), "block", nextBlock.toLong(), HISTORY_BLOCKS.toLong(), "Read cancelled; remaining history blocks were not requested."))
+            }
+            context.setCoverage(
+                ReadCoverage(
+                    scope = "Suica history service 0x%04X first %d blocks".format(SUICA_HISTORY_SERVICE, HISTORY_BLOCKS),
+                    unit = "block",
+                    expectedRange = ReadRange(0, HISTORY_BLOCKS.toLong()),
+                    completedRanges = completed,
+                )
+            )
+            throw cancelled
         }
         context.setCoverage(
             ReadCoverage(

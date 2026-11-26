@@ -5,6 +5,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import java.util.concurrent.CancellationException
 
 class MifareUltralightProtocolTest {
     @Test
@@ -101,9 +102,66 @@ class MifareUltralightProtocolTest {
         assertEquals(ReadOutcome.PARTIAL, context.buildResult().outcome)
     }
 
-    private fun newContext() = TechReadContext(
+    @Test
+    fun cancelledKnownProfileRetainsFastReadPagesAndUnreadTail() {
+        var cancelled = false
+        val commands = mutableListOf<ByteArray>()
+        val context = newContext { if (cancelled) throw CancellationException("cancelled") }
+        val transport = ReadOnlyTransport { command ->
+            commands += command.copyOf()
+            when (command[0].toInt() and 0xFF) {
+                0x60 -> byteArrayOf(0, 4, 4, 2, 1, 0, 0x0F, 3)
+                0x3A -> {
+                    cancelled = true
+                    ByteArray(16)
+                }
+                else -> error("Unexpected command")
+            }
+        }
+
+        try {
+            MifareUltralightProtocol.read(transport, context)
+        } catch (_: CancellationException) {
+        }
+
+        val result = context.buildResult()
+        assertEquals(2, commands.size)
+        assertEquals(4, result.coverage.completedRanges.size)
+        assertEquals(0L, result.coverage.completedRanges.first().startInclusive)
+        assertEquals(4L, result.coverage.completedRanges.last().endExclusive)
+        assertTrue(result.unreadRanges.any { it.startInclusive == 4L && it.endExclusive == 45L })
+    }
+
+    @Test
+    fun cancelledUnknownCapacityRemainsPartialAndRecordsUnreadPages() {
+        var cancelled = false
+        val context = newContext { if (cancelled) throw CancellationException("cancelled") }
+        val transport = ReadOnlyTransport { command ->
+            when (command[0].toInt() and 0xFF) {
+                0x60 -> byteArrayOf(0, 4, 9, 9, 9, 9, 9, 9)
+                0x30 -> {
+                    cancelled = true
+                    ByteArray(16)
+                }
+                else -> error("Unexpected command")
+            }
+        }
+
+        try {
+            MifareUltralightProtocol.read(transport, context)
+        } catch (_: CancellationException) {
+        }
+
+        val result = context.buildResult()
+        assertTrue(result.coverage.expectedRange != null)
+        assertTrue(!result.coverage.isComplete)
+        assertTrue(result.unreadRanges.any { it.startInclusive == 1L && it.endExclusive == 256L })
+        assertTrue(result.issues.any { it.kind == info.nukoneko.android.nfcreader.model.entity.ReadIssueKind.COVERAGE_UNKNOWN })
+    }
+
+    private fun newContext(cancellationCheck: () -> Unit = {}) = TechReadContext(
         rawBudget = RawCaptureBudget(64 * 1024),
         fieldBudget = FieldValueBudget(64 * 1024),
-        cancellationCheck = {},
+        cancellationCheck = cancellationCheck,
     )
 }

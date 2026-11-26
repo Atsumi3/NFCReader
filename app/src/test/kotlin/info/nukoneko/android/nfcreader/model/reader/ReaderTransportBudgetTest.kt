@@ -1,9 +1,11 @@
 package info.nukoneko.android.nfcreader.model.reader
 
 import android.nfc.TagLostException
+import info.nukoneko.android.nfcreader.extensions.hexToBytes
 import info.nukoneko.android.nfcreader.model.entity.DEFAULT_MAX_FIELD_VALUE_CHARS_PER_DUMP
 import info.nukoneko.android.nfcreader.model.entity.DEFAULT_MAX_RAW_BYTES_PER_DUMP
 import info.nukoneko.android.nfcreader.model.entity.ReadIssueKind
+import info.nukoneko.android.nfcreader.model.entity.ReadRange
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -30,6 +32,75 @@ class ReaderTransportBudgetTest {
         assertEquals(1, sent.size)
         assertEquals(0x00, sent.single()[1].toInt() and 0xFF)
         assertTrue(context.buildResult().issues.any { it.kind == ReadIssueKind.TAG_LOST })
+    }
+
+    @Test
+    fun felicaCancellationRetainsReadHistoryAndMarksRemainingBlocksAndSystems() {
+        val idm = byteArrayOf(1, 2, 3, 4, 5, 6, 7, 8)
+        var cancelled = false
+        val sent = mutableListOf<ByteArray>()
+        val context = context(cancellationCheck = {
+            if (cancelled) throw CancellationException("cancelled")
+        })
+        try {
+            FelicaReader().readWithTransport(
+                discoveredSystemCode = byteArrayOf(0, 3),
+                maxTransceiveLength = 255,
+                transport = ReadOnlyTransport { command ->
+                    sent += command.copyOf()
+                    when (command[1].toInt() and 0xFF) {
+                        0x00 -> byteArrayOf(18, 0x01) + idm + byteArrayOf(0xAA.toByte(), 0xBB.toByte(), 0xCC.toByte(), 0xDD.toByte(), 0xEE.toByte(), 0xFF.toByte(), 0x00, 0x11)
+                        0x0C -> byteArrayOf(13, 0x0D) + idm + byteArrayOf(1, 0, 3)
+                        0x06 -> {
+                            cancelled = true
+                            byteArrayOf(77, 0x07) + idm + byteArrayOf(0, 0, 4) +
+                                hexToBytes("1601000030B401020304DC0500002A00") + ByteArray(48)
+                        }
+                        else -> error("Unexpected FeliCa command")
+                    }
+                },
+                context = context,
+            )
+        } catch (_: CancellationException) {
+        }
+
+        val result = context.buildResult()
+        assertEquals(3, sent.size)
+        assertTrue(result.decodedFields.any { it.label.contains("history[0]") })
+        assertTrue(result.unreadRanges.any { it.scope.contains("service 0x090F") && it.startInclusive == 4L })
+        assertTrue(result.unreadRanges.any { it.scope == "FeliCa systems" })
+        assertTrue(result.coverageDetails.any { it.scope.startsWith("Suica history") })
+    }
+
+    @Test
+    fun mifareClassicCancellationKeepsCompletedAndUnreadBlockRanges() {
+        var cancelled = false
+        val reads = mutableListOf<Int>()
+        val readContext = context(cancellationCheck = {
+            if (cancelled) throw CancellationException("cancelled")
+        })
+        val transport = object : MifareClassicTransport {
+            override val sectorCount: Int = 1
+            override fun sectorToBlock(sector: Int): Int = 0
+            override fun blockCountInSector(sector: Int): Int = 4
+            override fun authenticateKeyA(sector: Int, key: ByteArray): Boolean = true
+            override fun authenticateKeyB(sector: Int, key: ByteArray): Boolean = false
+            override fun readBlock(block: Int): ByteArray {
+                reads += block
+                cancelled = true
+                return ByteArray(16) { block.toByte() }
+            }
+        }
+
+        try {
+            MifareClassicReader().readWithTransport(transport, readContext)
+        } catch (_: CancellationException) {
+        }
+
+        val result = readContext.buildResult()
+        assertEquals(listOf(0), reads)
+        assertEquals(listOf(ReadRange(0, 1)), result.coverage.completedRanges)
+        assertTrue(result.unreadRanges.any { it.startInclusive == 1L && it.endExclusive == 4L })
     }
 
     @Test
@@ -63,14 +134,23 @@ class ReaderTransportBudgetTest {
                 maxTransceiveLength = 255,
                 transport = ReadOnlyTransport { command ->
                     sentAfterCancel += command.copyOf()
-                    cancelled = true
-                    byteArrayOf(0x00)
+                    when (command[1].toInt() and 0xFF) {
+                        0x2B -> byteArrayOf(0x00, 0x04) + byteArrayOf(1, 2, 3, 4, 5, 6, 7, 8) + byteArrayOf(3, 3)
+                        0x20 -> {
+                            cancelled = true
+                            byteArrayOf(0, 1, 2, 3, 4)
+                        }
+                        else -> error("Unexpected NFC-V command")
+                    }
                 },
                 context = cancellationContext,
             )
         } catch (_: CancellationException) {
         }
-        assertEquals(1, sentAfterCancel.size)
+        assertEquals(2, sentAfterCancel.size)
+        val cancelledResult = cancellationContext.buildResult()
+        assertEquals(listOf(ReadRange(0, 1)), cancelledResult.coverage.completedRanges)
+        assertTrue(cancelledResult.unreadRanges.any { it.startInclusive == 1L && it.endExclusive == 4L })
 
         val sentAfterCountLimit = mutableListOf<ByteArray>()
         val countContext = context(limits = TechReadLimits(timeoutMillis = 30_000, maxTransceives = 1))

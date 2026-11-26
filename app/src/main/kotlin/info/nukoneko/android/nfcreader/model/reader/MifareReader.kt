@@ -13,6 +13,7 @@ import info.nukoneko.android.nfcreader.model.entity.ReadOutcome
 import info.nukoneko.android.nfcreader.model.entity.ReadRange
 import info.nukoneko.android.nfcreader.model.entity.UnreadRange
 import java.io.IOException
+import kotlinx.coroutines.CancellationException
 
 /** Dumps every readable page of a MIFARE Ultralight / NTAG tag. */
 class MifareUltralightReader : TechReader {
@@ -36,14 +37,33 @@ class MifareClassicReader : TechReader {
 
     override fun read(tech: TagTechnology, context: TechReadContext) {
         val mfc = tech as MifareClassic
-        val totalBlocks = (0 until mfc.sectorCount).sumOf(mfc::getBlockCountInSector)
+        readWithTransport(
+            object : MifareClassicTransport {
+                override val sectorCount: Int get() = mfc.sectorCount
+                override fun sectorToBlock(sector: Int): Int = mfc.sectorToBlock(sector)
+                override fun blockCountInSector(sector: Int): Int = mfc.getBlockCountInSector(sector)
+                override fun authenticateKeyA(sector: Int, key: ByteArray): Boolean = mfc.authenticateSectorWithKeyA(sector, key)
+                override fun authenticateKeyB(sector: Int, key: ByteArray): Boolean = mfc.authenticateSectorWithKeyB(sector, key)
+                override fun readBlock(block: Int): ByteArray = mfc.readBlock(block)
+            },
+            context,
+        )
+    }
+
+    internal fun readWithTransport(mfc: MifareClassicTransport, context: TechReadContext) {
+        val totalBlocks = (0 until mfc.sectorCount).sumOf(mfc::blockCountInSector)
         val completedBlocks = mutableListOf<ReadRange>()
+        var nextBlock = 0
+        try {
         sectorLoop@ for (sector in 0 until mfc.sectorCount) {
-            context.checkpoint()
             val firstBlock = mfc.sectorToBlock(sector)
-            val blockCount = mfc.getBlockCountInSector(sector)
+            val blockCount = mfc.blockCountInSector(sector)
+            nextBlock = firstBlock
+            context.checkpoint()
             val key = try {
                 DEFAULT_KEYS.firstOrNull { authenticate(mfc, sector, it.first, context) }
+            } catch (exception: CancellationException) {
+                throw exception
             } catch (exception: ReadBudgetExceededException) {
                 throw exception
             } catch (exception: Exception) {
@@ -58,6 +78,7 @@ class MifareClassicReader : TechReader {
                     )
                 )
                 if (exception is TagLostException) break@sectorLoop
+                nextBlock = firstBlock + blockCount
                 continue
             }
             if (key == null) {
@@ -78,19 +99,26 @@ class MifareClassicReader : TechReader {
                         reason = "Existing default-key authentication did not grant access.",
                     )
                 )
+                nextBlock = firstBlock + blockCount
                 continue
             }
             context.addDecodedFields(listOf(NfcField("Classic.sector[$sector].authentication", "existing built-in candidate ${key.second} accepted")))
             for (block in firstBlock until firstBlock + blockCount) {
+                nextBlock = block
                 context.checkpoint()
                 val data = try {
                     context.reserveTransceive("MIFARE Classic block read")
                     mfc.readBlock(block)
+                } catch (exception: CancellationException) {
+                    throw exception
                 } catch (exception: ReadBudgetExceededException) {
                     throw exception
                 } catch (exception: Exception) {
                     recordIoFailure(context, exception, "block $block")
-                    if (exception is TagLostException) break@sectorLoop
+                    if (exception is TagLostException) {
+                        context.addUnreadRange(UnreadRange("MIFARE Classic blocks", "block", block.toLong(), totalBlocks.toLong(), "Tag was lost before remaining blocks were read."))
+                        break@sectorLoop
+                    }
                     var recovered: ByteArray? = null
                     for ((candidate, candidateName) in DEFAULT_KEYS) {
                         context.checkpoint()
@@ -104,15 +132,21 @@ class MifareClassicReader : TechReader {
                                     break
                                 }
                             }
+                        } catch (retryException: CancellationException) {
+                            throw retryException
                         } catch (retryException: ReadBudgetExceededException) {
                             throw retryException
                         } catch (retryException: Exception) {
                             recordIoFailure(context, retryException, "block $block Key B $candidateName")
-                            if (retryException is TagLostException) break@sectorLoop
+                            if (retryException is TagLostException) {
+                                context.addUnreadRange(UnreadRange("MIFARE Classic blocks", "block", block.toLong(), totalBlocks.toLong(), "Tag was lost before remaining blocks were read."))
+                                break@sectorLoop
+                            }
                         }
                     }
                     if (recovered == null || recovered.size != 16) {
                         context.addUnreadRange(UnreadRange("MIFARE Classic blocks", "block", block.toLong(), (block + 1).toLong(), "Read failed with the existing Key B candidates."))
+                        nextBlock = block + 1
                         continue
                     }
                     recovered
@@ -129,6 +163,7 @@ class MifareClassicReader : TechReader {
                     context.addUnreadRange(
                         UnreadRange("MIFARE Classic blocks", "block", block.toLong(), (block + 1).toLong(), "Malformed block length.")
                     )
+                    nextBlock = block + 1
                     continue
                 }
                 context.captureRaw(if (isTrailer) "Classic sector trailer as returned by Android" else "Classic block", data, "block $block")
@@ -146,7 +181,23 @@ class MifareClassicReader : TechReader {
                     )
                 }
                 completedBlocks += ReadRange(block.toLong(), block + 1L)
+                nextBlock = block + 1
             }
+            nextBlock = firstBlock + blockCount
+        }
+        } catch (cancelled: CancellationException) {
+            if (nextBlock < totalBlocks) {
+                context.addUnreadRange(UnreadRange("MIFARE Classic blocks", "block", nextBlock.toLong(), totalBlocks.toLong(), "Read cancelled; remaining blocks were not requested."))
+            }
+            context.setCoverage(
+                ReadCoverage(
+                    scope = "MIFARE Classic blocks as returned by Android",
+                    unit = "block",
+                    expectedRange = ReadRange(0, totalBlocks.toLong()),
+                    completedRanges = completedBlocks,
+                )
+            )
+            throw cancelled
         }
         context.setCoverage(
             ReadCoverage(
@@ -159,11 +210,11 @@ class MifareClassicReader : TechReader {
         if (completedBlocks.size == totalBlocks) context.markComplete() else context.markPartial()
     }
 
-    private fun authenticate(mfc: MifareClassic, sector: Int, key: ByteArray, context: TechReadContext): Boolean {
+    private fun authenticate(mfc: MifareClassicTransport, sector: Int, key: ByteArray, context: TechReadContext): Boolean {
         context.reserveTransceive("MIFARE Classic Key A authentication")
-        if (mfc.authenticateSectorWithKeyA(sector, key)) return true
+        if (mfc.authenticateKeyA(sector, key)) return true
         context.reserveTransceive("MIFARE Classic Key B authentication")
-        return mfc.authenticateSectorWithKeyB(sector, key)
+        return mfc.authenticateKeyB(sector, key)
     }
 
     private fun recordIoFailure(context: TechReadContext, exception: Exception, operation: String) {
@@ -186,4 +237,13 @@ class MifareClassicReader : TechReader {
             ByteArray(6) to "ZERO",
         )
     }
+}
+
+internal interface MifareClassicTransport {
+    val sectorCount: Int
+    fun sectorToBlock(sector: Int): Int
+    fun blockCountInSector(sector: Int): Int
+    fun authenticateKeyA(sector: Int, key: ByteArray): Boolean
+    fun authenticateKeyB(sector: Int, key: ByteArray): Boolean
+    fun readBlock(block: Int): ByteArray
 }

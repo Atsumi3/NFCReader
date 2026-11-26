@@ -53,6 +53,8 @@ internal object MifareUltralightProtocol {
             context.checkpoint()
             transport.transceiveReadOnly(versionRequest)
         } catch (exception: CancellationException) {
+            context.addUnreadRange(UnreadRange("MIFARE Ultralight GET_VERSION", "response", reason = "Read cancelled before the version profile was validated."))
+            context.setCoverage(ReadCoverage.unknown("MIFARE Ultralight GET_VERSION"))
             throw exception
         } catch (exception: ReadBudgetExceededException) {
             throw exception
@@ -85,6 +87,7 @@ internal object MifareUltralightProtocol {
         var page = 0
         var stoppedAt: Int? = null
         var fastReadUsedFallback = false
+        try {
         while (page < pageCount) {
             context.checkpoint()
             val end = minOf(page + MAX_FAST_READ_PAGES - 1, profile.lastPage)
@@ -134,6 +137,21 @@ internal object MifareUltralightProtocol {
             if (stoppedAt != null) break
             page = end + 1
         }
+        } catch (cancelled: CancellationException) {
+            val unreadFrom = completed.maxOfOrNull { it.endExclusive }?.toInt() ?: 0
+            if (unreadFrom < pageCount) {
+                context.addUnreadRange(UnreadRange(profile.name + " pages", "page", unreadFrom.toLong(), pageCount.toLong(), "Read cancelled; remaining pages were not requested."))
+            }
+            context.setCoverage(
+                ReadCoverage(
+                    scope = "%s pages 0..%d".format(profile.name, profile.lastPage),
+                    unit = "page",
+                    expectedRange = ReadRange(0, pageCount.toLong()),
+                    completedRanges = completed,
+                )
+            )
+            throw cancelled
+        }
         context.setCoverage(
             ReadCoverage(
                 scope = "%s pages 0..%d".format(profile.name, profile.lastPage),
@@ -156,7 +174,10 @@ internal object MifareUltralightProtocol {
     private fun readUnknownCapacity(transport: ReadOnlyTransport, context: TechReadContext) {
         val completed = mutableListOf<ReadRange>()
         var stoppedAt: Int? = null
+        var nextPage = 0
+        try {
         for (page in 0 until MAX_UNKNOWN_PAGES) {
+            nextPage = page
             context.checkpoint()
             val bytes = readSinglePage(transport, context, page)
             if (bytes == null) {
@@ -165,6 +186,16 @@ internal object MifareUltralightProtocol {
             }
             recordPage(context, page, bytes)
             completed += ReadRange(page.toLong(), page + 1L)
+            nextPage = page + 1
+        }
+        } catch (cancelled: CancellationException) {
+            val unreadFrom = completed.maxOfOrNull { it.endExclusive }?.toInt() ?: nextPage
+            if (unreadFrom < MAX_UNKNOWN_PAGES) {
+                context.addUnreadRange(UnreadRange("Unknown MIFARE Ultralight pages", "page", unreadFrom.toLong(), MAX_UNKNOWN_PAGES.toLong(), "Read cancelled; remaining pages were not requested and capacity remains unknown."))
+            }
+            context.addIssue(ReadIssue(ReadIssueKind.COVERAGE_UNKNOWN, "The bounded READ capacity is unknown; cancellation cannot establish physical completeness."))
+            context.setCoverage(ReadCoverage("Unknown-capacity MIFARE Ultralight bounded READ", "page", ReadRange(0, MAX_UNKNOWN_PAGES.toLong()), completed))
+            throw cancelled
         }
         if (stoppedAt != null) {
             context.addUnreadRange(UnreadRange("Unknown MIFARE Ultralight pages", "page", stoppedAt.toLong(), MAX_UNKNOWN_PAGES.toLong(), "Bounded READ stopped at the first unsuccessful page; capacity remains unknown."))

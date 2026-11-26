@@ -2,17 +2,41 @@ package info.nukoneko.android.nfcreader.model.reader
 
 import android.nfc.tech.TagTechnology
 import info.nukoneko.android.nfcreader.model.entity.NfcField
+import info.nukoneko.android.nfcreader.model.entity.ReadCoverage
+import info.nukoneko.android.nfcreader.model.entity.ReadIssue
+import info.nukoneko.android.nfcreader.model.entity.ReadIssueKind
+import info.nukoneko.android.nfcreader.model.entity.ReadOutcome
 
 /**
- * Reads tag-type-specific content by exchanging protocol commands with the card,
- * beyond the metadata exposed by the generic reflection-based getter dump.
+ * Reads tag-type-specific content beyond metadata from typed Android discovery getters.
  */
 interface TechReader {
     /** Fully-qualified tech class name handled, e.g. "android.nfc.tech.Ndef". */
     val techName: String
 
-    /** [tech] is already connected. Returns extra fields, or empty if nothing applies. */
-    fun read(tech: TagTechnology): List<NfcField>
+    /** [tech] is already connected. Readers append data as it is acquired. */
+    fun read(tech: TagTechnology, context: TechReadContext)
+}
+
+abstract class LegacyFieldTechReader : TechReader {
+    protected abstract fun readLegacy(tech: TagTechnology): List<NfcField>
+
+    final override fun read(tech: TagTechnology, context: TechReadContext) {
+        val fields = readLegacy(tech)
+        context.addDecodedFields(fields)
+        if (fields.isEmpty()) {
+            context.markMetadataOnly()
+        } else {
+            context.setCoverage(ReadCoverage.unknown("Legacy reader output"))
+            context.addIssue(
+                ReadIssue(
+                    kind = ReadIssueKind.COVERAGE_UNKNOWN,
+                    message = "Legacy reader does not report the complete read range.",
+                )
+            )
+            context.markPartial()
+        }
+    }
 }
 
 /** Registry that resolves the [TechReader] for a given technology, if any. */

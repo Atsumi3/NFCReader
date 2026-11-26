@@ -35,4 +35,22 @@ class NdefPayloadTest {
         val payload = byteArrayOf(0x02) + "jaこんにちは".toByteArray(Charsets.UTF_8)
         assertEquals("こんにちは", decodeNdefTextPayload(payload))
     }
+
+    @Test
+    fun longTextIsPreviewTruncatedWithoutMalformedWarning() {
+        val payload = byteArrayOf(0x00) + "a".repeat(5000).toByteArray(Charsets.UTF_8)
+        val result = decodeNdefPayload(1, byteArrayOf('T'.code.toByte()), payload)
+        assertEquals(4096, result.decodedText?.length)
+        assertEquals(true, result.previewTruncated)
+        assertEquals(emptyList<String>(), result.warnings)
+    }
+
+    @Test
+    fun utf8PreviewBoundaryDoesNotTurnValidTextIntoMalformedData() {
+        val payload = byteArrayOf(0x00) + ("a".repeat(4095) + "💩tail").toByteArray(Charsets.UTF_8)
+        val result = decodeNdefPayload(1, byteArrayOf('T'.code.toByte()), payload)
+        assertEquals(4095, result.decodedText?.length)
+        assertEquals(true, result.previewTruncated)
+        assertEquals(emptyList<String>(), result.warnings)
+    }
 }

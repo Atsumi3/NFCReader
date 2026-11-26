@@ -12,6 +12,15 @@
         android:supportsRtl="true"
         android:theme="@style/Theme.NFCReader"
         tools:ignore="GoogleAppIndexingWarning">
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.fileprovider"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/nfc_dump_file_paths"/>
+        </provider>
         <activity
             android:name=".ui.nfcread.NfcReadActivity"
             android:exported="true"

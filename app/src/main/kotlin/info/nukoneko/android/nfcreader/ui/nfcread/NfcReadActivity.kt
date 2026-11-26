@@ -43,7 +43,13 @@ class NfcReadActivity : ComponentActivity() {
             NfcReaderTheme {
                 val state by viewModel.state.collectAsStateWithLifecycle()
                 val readTime by viewModel.readTime.collectAsStateWithLifecycle()
-                NfcReadScreen(state = state, readTime = readTime)
+                NfcReadScreen(
+                    state = state,
+                    readTime = readTime,
+                    onStopReading = viewModel::stopReading,
+                    onSetPendingDumpFileExport = viewModel::setPendingDumpFileExport,
+                    onTakePendingDumpFileExport = viewModel::takePendingDumpFileExport,
+                )
             }
         }
         if (savedInstanceState == null) {

@@ -44,6 +44,7 @@ import androidx.compose.foundation.Image
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
@@ -137,6 +138,7 @@ internal fun NfcReadScreen(
     val saveText: (String) -> Unit = { save(it, "nfc-dump.txt", textExporter::launch) }
     val saveJson: (String) -> Unit = { save(it, "nfc-dump.json", jsonExporter::launch) }
     val isReading = state.isReadingInProgress()
+    val displayDump = state.dumpForDisplay()
 
     Scaffold(
         modifier = modifier.fillMaxSize(),
@@ -203,54 +205,51 @@ internal fun NfcReadScreen(
                     .weight(1f),
                 contentAlignment = Alignment.Center,
             ) {
-                when (state) {
-                    ReadStatus.Idle -> ReaderStateCard(
-                        status = stringResource(R.string.state_waiting),
-                        title = stringResource(R.string.please_hold_up_device),
-                        description = stringResource(R.string.idle_read_only_description),
-                    )
-                    ReadStatus.Reading -> ReadingMessage()
-                    is ReadStatus.ReadingWithPrevious ->
+                if (displayDump != null) {
+                    key(displayDump.capturedAtEpochMillis) {
                         NfcDumpContent(
-                            dump = state.dump,
-                            statusMessage = stringResource(R.string.reading_new_tag),
+                            dump = displayDump,
+                            statusMessage = when (state) {
+                                is ReadStatus.ReadingWithPrevious -> stringResource(R.string.reading_new_tag)
+                                is ReadStatus.Failure.NfcDisabledWithDump -> stringResource(R.string.nfc_disabled)
+                                is ReadStatus.Failure.IntentUnsupportedWithDump -> stringResource(R.string.intent_is_not_supported)
+                                else -> null
+                            },
                             saveText = saveText,
                             saveJson = saveJson,
+                            statusDescription = if (state is ReadStatus.Failure.NfcDisabledWithDump) {
+                                stringResource(R.string.nfc_disabled_help)
+                            } else null,
+                            statusActionLabel = if (state is ReadStatus.Failure.NfcDisabledWithDump) {
+                                stringResource(R.string.open_nfc_settings)
+                            } else null,
+                            onStatusAction = if (state is ReadStatus.Failure.NfcDisabledWithDump) {
+                                ::openNfcSettings
+                            } else null,
                         )
-
-                    is ReadStatus.Success -> NfcDumpContent(state.dump, saveText = saveText, saveJson = saveJson)
-                    is ReadStatus.Failure.NfcDisabledWithDump ->
-                        NfcDumpContent(
-                            state.dump,
-                            stringResource(R.string.nfc_disabled),
-                            saveText = saveText,
-                            saveJson = saveJson,
-                            statusDescription = stringResource(R.string.nfc_disabled_help),
-                            statusActionLabel = stringResource(R.string.open_nfc_settings),
-                            onStatusAction = ::openNfcSettings,
+                    }
+                } else {
+                    when (state) {
+                        ReadStatus.Idle -> ReaderStateCard(
+                            status = stringResource(R.string.state_waiting),
+                            title = stringResource(R.string.please_hold_up_device),
+                            description = stringResource(R.string.idle_read_only_description),
                         )
-
-                    is ReadStatus.Failure.IntentUnsupportedWithDump ->
-                        NfcDumpContent(
-                            state.dump,
-                            stringResource(R.string.intent_is_not_supported),
-                            saveText = saveText,
-                            saveJson = saveJson,
+                        ReadStatus.Reading -> ReadingMessage()
+                        is ReadStatus.Failure.NfcDisabled -> ReaderStateCard(
+                            status = stringResource(R.string.state_nfc_disabled),
+                            title = state.toMessage(),
+                            description = stringResource(R.string.nfc_disabled_help),
+                            actionLabel = stringResource(R.string.open_nfc_settings),
+                            onAction = ::openNfcSettings,
                         )
-
-                    is ReadStatus.Failure.NfcDisabled -> ReaderStateCard(
-                        status = stringResource(R.string.state_nfc_disabled),
-                        title = state.toMessage(),
-                        description = stringResource(R.string.nfc_disabled_help),
-                        actionLabel = stringResource(R.string.open_nfc_settings),
-                        onAction = ::openNfcSettings,
-                    )
-
-                    is ReadStatus.Failure -> ReaderStateCard(
-                        status = stringResource(R.string.state_attention),
-                        title = state.toMessage(),
-                        description = stringResource(R.string.read_error_description),
-                    )
+                        is ReadStatus.Failure -> ReaderStateCard(
+                            status = stringResource(R.string.state_attention),
+                            title = state.toMessage(),
+                            description = stringResource(R.string.read_error_description),
+                        )
+                        else -> Unit
+                    }
                 }
             }
         }
@@ -259,6 +258,20 @@ internal fun NfcReadScreen(
 
 internal fun ReadStatus.isReadingInProgress(): Boolean =
     this == ReadStatus.Reading || this is ReadStatus.ReadingWithPrevious
+
+internal fun ReadStatus.dumpForDisplay(): NfcDump? = when (this) {
+    is ReadStatus.Success -> dump
+    is ReadStatus.ReadingWithPrevious -> dump
+    is ReadStatus.Failure -> when (this) {
+        is ReadStatus.Failure.NfcDisabledWithDump -> dump
+        is ReadStatus.Failure.IntentUnsupportedWithDump -> dump
+        ReadStatus.Failure.NfcDisabled,
+        ReadStatus.Failure.IntentUnsupported,
+        is ReadStatus.Failure.Error -> null
+    }
+    ReadStatus.Idle,
+    ReadStatus.Reading -> null
+}
 
 @Composable
 private fun ReadingMessage() {

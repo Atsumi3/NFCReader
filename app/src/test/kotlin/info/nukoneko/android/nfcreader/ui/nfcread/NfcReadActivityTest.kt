@@ -10,6 +10,8 @@ import androidx.lifecycle.ViewModelProvider
 import info.nukoneko.android.nfcreader.model.entity.ReadStatus
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
+import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -91,6 +93,51 @@ class NfcReadActivityTest {
         }
     }
 
+    @Test
+    fun adapterStateBroadcastSyncsForegroundDispatchWithoutResume() {
+        withResumedActivity(Intent().setAction(Intent.ACTION_MAIN), nfcEnabled = false) { controller ->
+            val activity = controller.get()
+            val adapter = requireNotNull(NfcAdapter.getDefaultAdapter(activity))
+            val adapterShadow = Shadows.shadowOf(adapter)
+
+            assertEquals(ReadStatus.Failure.NfcDisabled, viewModel(activity).state.value)
+            assertNull(adapterShadow.getEnabledActivity())
+
+            adapterShadow.setEnabled(true)
+            sendAdapterStateChanged(NfcAdapter.STATE_OFF)
+
+            assertEquals(ReadStatus.Idle, viewModel(activity).state.value)
+            assertSame(activity, adapterShadow.getEnabledActivity())
+
+            adapterShadow.setEnabled(false)
+            sendAdapterStateChanged(NfcAdapter.STATE_ON)
+
+            assertEquals(ReadStatus.Failure.NfcDisabled, viewModel(activity).state.value)
+            assertSame(activity, adapterShadow.getDisabledActivity())
+        }
+    }
+
+    @Test
+    fun adapterStateBroadcastWhilePausedDoesNotEnableDispatchUntilResume() {
+        withResumedActivity(Intent().setAction(Intent.ACTION_MAIN), nfcEnabled = false) { controller ->
+            val activity = controller.get()
+            val adapter = requireNotNull(NfcAdapter.getDefaultAdapter(activity))
+            val adapterShadow = Shadows.shadowOf(adapter)
+
+            controller.pause()
+            adapterShadow.setEnabled(true)
+            sendAdapterStateChanged(NfcAdapter.STATE_ON)
+
+            assertEquals(ReadStatus.Failure.NfcDisabled, viewModel(activity).state.value)
+            assertNull(adapterShadow.getEnabledActivity())
+
+            controller.resume()
+
+            assertEquals(ReadStatus.Idle, viewModel(activity).state.value)
+            assertSame(activity, adapterShadow.getEnabledActivity())
+        }
+    }
+
     private fun assertColdStartNfcAction(action: String) {
         withResumedActivity(Intent().setAction(action)) { controller ->
             assertEquals(ReadStatus.Failure.IntentUnsupported, viewModel(controller.get()).state.value)
@@ -100,9 +147,10 @@ class NfcReadActivityTest {
     private fun withResumedActivity(
         intent: Intent,
         savedInstanceState: Bundle? = null,
+        nfcEnabled: Boolean = true,
         assertion: (ActivityController<NfcReadActivity>) -> Unit,
     ) {
-        prepareNfcEnvironment()
+        prepareNfcEnvironment(nfcEnabled)
         val controller = Robolectric.buildActivity(NfcReadActivity::class.java, intent)
         try {
             if (savedInstanceState == null) controller.create() else controller.create(savedInstanceState)
@@ -113,7 +161,7 @@ class NfcReadActivityTest {
         }
     }
 
-    private fun prepareNfcEnvironment() {
+    private fun prepareNfcEnvironment(nfcEnabled: Boolean = true) {
         val application = RuntimeEnvironment.getApplication()
         val packageManager = application.packageManager
         Shadows.shadowOf(packageManager).setSystemFeature(PackageManager.FEATURE_NFC, true)
@@ -126,10 +174,17 @@ class NfcReadActivityTest {
         val adapter = NfcAdapter.getDefaultAdapter(application)
         assertNotNull("Robolectric should provide an NFC adapter before Activity creation", adapter)
         val enabledAdapter = requireNotNull(adapter)
-        Shadows.shadowOf(enabledAdapter).setEnabled(true)
+        Shadows.shadowOf(enabledAdapter).setEnabled(nfcEnabled)
         assertTrue(
-            "Robolectric NFC adapter should be enabled before Activity creation",
-            enabledAdapter.isEnabled,
+            "Robolectric NFC adapter state should match the test setup",
+            enabledAdapter.isEnabled == nfcEnabled,
+        )
+    }
+
+    private fun sendAdapterStateChanged(state: Int) {
+        RuntimeEnvironment.getApplication().sendBroadcast(
+            Intent(NfcAdapter.ACTION_ADAPTER_STATE_CHANGED)
+                .putExtra(NfcAdapter.EXTRA_ADAPTER_STATE, state),
         )
     }
 

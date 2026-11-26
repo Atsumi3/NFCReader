@@ -17,7 +17,7 @@ import org.robolectric.android.controller.ActivityController
 import org.robolectric.shadows.ShadowNfcAdapter
 
 @RunWith(RobolectricTestRunner::class)
-@Config(sdk = [Build.VERSION_CODES.VANILLA_ICE_CREAM])
+@Config(sdk = [Build.VERSION_CODES.P])
 class NfcReadActivityTest {
 
     @Test

@@ -1,6 +1,8 @@
 package info.nukoneko.android.nfcreader.ui.nfcread
 
+import android.content.ContentResolver
 import android.content.Intent
+import android.net.Uri
 import android.nfc.NfcAdapter
 import android.nfc.Tag
 import android.nfc.TagLostException
@@ -17,6 +19,7 @@ import android.nfc.tech.NfcV
 import android.nfc.tech.TagTechnology
 import android.util.Log
 import androidx.core.content.IntentCompat
+import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import info.nukoneko.android.nfcreader.extensions.toHexString
@@ -45,19 +48,27 @@ import kotlinx.coroutines.withContext
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import java.io.IOException
+import java.io.File
 import java.util.concurrent.ScheduledThreadPoolExecutor
 import java.util.concurrent.TimeUnit
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import java.util.UUID
 
-class NfcReadViewModel : ViewModel() {
+class NfcReadViewModel(
+    private val savedStateHandle: SavedStateHandle,
+) : ViewModel() {
 
     private val _state = MutableStateFlow<ReadStatus>(ReadStatus.Idle)
     val state: StateFlow<ReadStatus> = _state.asStateFlow()
 
     private val _readTime = MutableStateFlow("")
     val readTime: StateFlow<String> = _readTime.asStateFlow()
+
+    private val _dumpFileExportResult = MutableStateFlow<DumpFileExportResult?>(null)
+    internal val dumpFileExportResult: StateFlow<DumpFileExportResult?> = _dumpFileExportResult.asStateFlow()
+    private var dumpFileExportResultId = 0L
 
     private val dateFormat = SimpleDateFormat(DATE_FORMAT, Locale.getDefault())
     private val scanMutex = Mutex()
@@ -72,16 +83,76 @@ class NfcReadViewModel : ViewModel() {
         stopActiveRead()
     }
 
-    private var pendingDumpFileExport: Pair<String, String>? = null
-
-    @Synchronized
-    fun setPendingDumpFileExport(fileName: String, content: String) {
-        pendingDumpFileExport = fileName to content
+    suspend fun preparePendingDumpFileExport(cacheDir: File, content: String): Boolean {
+        val oldToken = savedStateHandle.get<String>(PENDING_EXPORT_TOKEN_KEY)
+        savedStateHandle[PENDING_EXPORT_TOKEN_KEY] = null
+        val token = UUID.randomUUID().toString()
+        val written = withContext(Dispatchers.IO) {
+            oldToken?.let { runCatching { NfcDumpFileExporter.deletePendingExportFile(cacheDir, it) } }
+            try {
+                NfcDumpFileExporter.writePendingExportFile(cacheDir, token, content)
+                true
+            } catch (exception: CancellationException) {
+                throw exception
+            } catch (exception: Exception) {
+                false
+            }
+        }
+        if (written) savedStateHandle[PENDING_EXPORT_TOKEN_KEY] = token
+        return written
     }
 
-    @Synchronized
-    fun takePendingDumpFileExport(): Pair<String, String>? =
-        pendingDumpFileExport.also { pendingDumpFileExport = null }
+    fun completePendingDumpFileExport(cacheDir: File, contentResolver: ContentResolver, uri: Uri?) {
+        val token = pendingDumpFileExportToken()
+        if (uri == null) {
+            if (token != null) viewModelScope.launch { discardPendingDumpFileExport(cacheDir, token) }
+            return
+        }
+        if (token == null) {
+            publishDumpFileExportResult(saved = false)
+            return
+        }
+        viewModelScope.launch {
+            val saved = try {
+                withContext(Dispatchers.IO) {
+                    try {
+                        val output = contentResolver.openOutputStream(uri) ?: throw IOException("Unable to open export destination.")
+                        output.use { NfcDumpFileExporter.copyPendingExportToStream(cacheDir, token, it) }
+                        true
+                    } catch (exception: CancellationException) {
+                        throw exception
+                    } catch (exception: Exception) {
+                        false
+                    } finally {
+                        runCatching { NfcDumpFileExporter.deletePendingExportFile(cacheDir, token) }
+                    }
+                }
+            } catch (exception: CancellationException) {
+                throw exception
+            } finally {
+                savedStateHandle[PENDING_EXPORT_TOKEN_KEY] = null
+            }
+            publishDumpFileExportResult(saved)
+        }
+    }
+
+    internal fun pendingDumpFileExportToken(): String? =
+        savedStateHandle.get(PENDING_EXPORT_TOKEN_KEY)
+
+    internal suspend fun discardPendingDumpFileExport(cacheDir: File, token: String) {
+        if (pendingDumpFileExportToken() == token) savedStateHandle[PENDING_EXPORT_TOKEN_KEY] = null
+        withContext(Dispatchers.IO) {
+            runCatching { NfcDumpFileExporter.deletePendingExportFile(cacheDir, token) }
+        }
+    }
+
+    fun acknowledgeDumpFileExportResult(id: Long) {
+        if (_dumpFileExportResult.value?.id == id) _dumpFileExportResult.value = null
+    }
+
+    private fun publishDumpFileExportResult(saved: Boolean) {
+        _dumpFileExportResult.value = DumpFileExportResult(++dumpFileExportResultId, saved)
+    }
 
     fun onNfcDisabled() {
         val previousDump = _state.value.currentDump()
@@ -197,6 +268,10 @@ class NfcReadViewModel : ViewModel() {
         is ReadStatus.Failure.NfcDisabledWithDump -> dump
         is ReadStatus.Failure.IntentUnsupportedWithDump -> dump
         else -> null
+    }
+
+    internal companion object {
+        const val PENDING_EXPORT_TOKEN_KEY = "pending_dump_file_export_token"
     }
 
     private fun readTagMetadata(
@@ -370,6 +445,11 @@ class NfcReadViewModel : ViewModel() {
         private const val LOG_TAG = "NfcReadViewModel"
     }
 }
+
+internal data class DumpFileExportResult(
+    val id: Long,
+    val saved: Boolean,
+)
 
 internal class ReadGenerationGate {
     private var generation = 0L

@@ -5,6 +5,8 @@ import android.content.Context
 import android.content.Intent
 import androidx.core.content.FileProvider
 import java.io.File
+import java.io.OutputStream
+import java.util.UUID
 
 internal object NfcDumpFileExporter {
     private const val FILE_PROVIDER_SUFFIX = ".fileprovider"
@@ -16,6 +18,35 @@ internal object NfcDumpFileExporter {
         return File.createTempFile("nfc-dump-", ".$extension", directory).apply {
             writeText(content, Charsets.UTF_8)
         }
+    }
+
+    fun writePendingExportFile(cacheDir: File, token: String, content: String): File {
+        val file = pendingExportFile(cacheDir, token)
+        val directory = file.parentFile ?: error("Missing pending export directory.")
+        check(directory.exists() || directory.mkdirs()) { "Unable to create NFC dump cache directory." }
+        try {
+            file.writeText(content, Charsets.UTF_8)
+        } catch (exception: Exception) {
+            file.delete()
+            throw exception
+        }
+        return file
+    }
+
+    fun pendingExportFile(cacheDir: File, token: String): File {
+        require(runCatching { UUID.fromString(token).toString() == token }.getOrDefault(false))
+        return File(File(cacheDir, "nfc-dumps"), "pending-$token")
+    }
+
+    fun copyPendingExportToStream(cacheDir: File, token: String, output: OutputStream) {
+        val file = pendingExportFile(cacheDir, token)
+        check(file.isFile) { "Pending NFC dump export is missing." }
+        file.inputStream().use { input -> input.copyTo(output) }
+    }
+
+    fun deletePendingExportFile(cacheDir: File, token: String): Boolean {
+        val file = pendingExportFile(cacheDir, token)
+        return !file.exists() || file.delete()
     }
 
     fun createShareIntent(context: Context, file: File, mimeType: String): Intent {

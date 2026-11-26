@@ -32,6 +32,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
@@ -63,30 +64,31 @@ import java.text.DateFormat
 import java.util.Date
 
 @Composable
-fun NfcReadScreen(
+internal fun NfcReadScreen(
     state: ReadStatus,
     readTime: String,
     modifier: Modifier = Modifier,
     onStopReading: () -> Unit = {},
-    onSetPendingDumpFileExport: (String, String) -> Unit = { _, _ -> },
-    onTakePendingDumpFileExport: () -> Pair<String, String>? = { null },
+    onPrepareDumpFileExport: suspend (String) -> Boolean = { false },
+    onCompleteDumpFileExport: (Uri?) -> Unit = {},
+    dumpFileExportResult: DumpFileExportResult? = null,
+    onAcknowledgeDumpFileExportResult: (Long) -> Unit = {},
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
 
+    LaunchedEffect(dumpFileExportResult?.id) {
+        val result = dumpFileExportResult ?: return@LaunchedEffect
+        Toast.makeText(
+            context,
+            if (result.saved) R.string.dump_saved else R.string.dump_save_failed,
+            Toast.LENGTH_SHORT,
+        ).show()
+        onAcknowledgeDumpFileExportResult(result.id)
+    }
+
     fun writeToSaf(uri: Uri?) {
-        val pending = onTakePendingDumpFileExport()
-        if (uri == null || pending == null) return
-        scope.launch {
-            val saved = withContext(Dispatchers.IO) {
-                runCatching {
-                    context.contentResolver.openOutputStream(uri)?.use { stream ->
-                        stream.write(pending.second.toByteArray(Charsets.UTF_8))
-                    } ?: error("Unable to open export destination.")
-                }.isSuccess
-            }
-            Toast.makeText(context, if (saved) R.string.dump_saved else R.string.dump_save_failed, Toast.LENGTH_SHORT).show()
-        }
+        onCompleteDumpFileExport(uri)
     }
 
     val textExporter = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("text/plain")) {
@@ -97,8 +99,13 @@ fun NfcReadScreen(
     }
 
     fun save(content: String, fileName: String, launcher: (String) -> Unit) {
-        onSetPendingDumpFileExport(fileName, content)
-        launcher(fileName)
+        scope.launch {
+            if (onPrepareDumpFileExport(content)) {
+                launcher(fileName)
+            } else {
+                Toast.makeText(context, R.string.dump_save_failed, Toast.LENGTH_SHORT).show()
+            }
+        }
     }
 
     val saveText: (String) -> Unit = { save(it, "nfc-dump.txt", textExporter::launch) }

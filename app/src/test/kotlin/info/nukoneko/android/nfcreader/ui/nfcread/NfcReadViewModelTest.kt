@@ -3,6 +3,7 @@ package info.nukoneko.android.nfcreader.ui.nfcread
 import info.nukoneko.android.nfcreader.model.entity.ReadStatus
 import info.nukoneko.android.nfcreader.model.entity.NfcTagMetadata
 import info.nukoneko.android.nfcreader.model.reader.NfcDumpCollector
+import androidx.lifecycle.SavedStateHandle
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
@@ -11,7 +12,8 @@ import org.junit.Test
 
 class NfcReadViewModelTest {
 
-    private val viewModel = NfcReadViewModel()
+    private val savedStateHandle = SavedStateHandle()
+    private val viewModel = NfcReadViewModel(savedStateHandle)
 
     @Test
     fun initialStateIsIdle() {
@@ -38,13 +40,14 @@ class NfcReadViewModelTest {
     }
 
     @Test
-    fun pendingSafSnapshotIsRetainedUntilTheResultConsumesIt() {
-        val snapshot = "a sufficiently large immutable export snapshot"
-        viewModel.setPendingDumpFileExport("nfc-dump.json", snapshot)
+    fun pendingSafTokenSurvivesSavedStateHandleRecreation() {
+        val token = "00000000-0000-0000-0000-000000000001"
+        savedStateHandle[NfcReadViewModel.PENDING_EXPORT_TOKEN_KEY] = token
         viewModel.onNfcDisabled()
 
-        assertEquals("nfc-dump.json" to snapshot, viewModel.takePendingDumpFileExport())
-        assertNull(viewModel.takePendingDumpFileExport())
+        assertEquals(token, viewModel.pendingDumpFileExportToken())
+        val recreated = NfcReadViewModel(SavedStateHandle(mapOf(NfcReadViewModel.PENDING_EXPORT_TOKEN_KEY to token)))
+        assertEquals(token, recreated.pendingDumpFileExportToken())
     }
 
     @Test

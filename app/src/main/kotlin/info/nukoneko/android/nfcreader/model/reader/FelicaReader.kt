@@ -433,6 +433,9 @@ class FelicaReader : TechReader {
                 } else {
                     val entry = parseSuicaHistoryBlock(block)
                     context.addDecodedFields(listOf(NfcField("$prefix.history[$blockNumber]", entry.summary())))
+                    if (context.buildResult().decodedFields.none { it.label == "Suica.balance" }) {
+                        context.addDecodedFields(listOf(NfcField("Suica.balance", entry.balanceYen.toString())))
+                    }
                     if (!entry.dateValid) {
                         context.addIssue(ReadIssue(ReadIssueKind.MALFORMED_RESPONSE, "History date fields are invalid; raw block is retained.", "$prefix block $blockNumber"))
                     }

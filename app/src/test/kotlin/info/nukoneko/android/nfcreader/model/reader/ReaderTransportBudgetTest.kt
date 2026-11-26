@@ -122,6 +122,39 @@ class ReaderTransportBudgetTest {
     }
 
     @Test
+    fun suicaBalanceIsAvailableAsAStandaloneFieldAlongsideHistorySummary() {
+        val idm = byteArrayOf(1, 2, 3, 4, 5, 6, 7, 8)
+        var historyReadCount = 0
+        val context = context()
+        FelicaReader().readWithTransport(
+            discoveredSystemCode = byteArrayOf(0, 3),
+            maxTransceiveLength = 255,
+            transport = ReadOnlyTransport { command ->
+                when (command[1].toInt() and 0xFF) {
+                    0x00 -> byteArrayOf(18, 0x01) + idm + byteArrayOf(0xAA.toByte(), 0xBB.toByte(), 0xCC.toByte(), 0xDD.toByte(), 0xEE.toByte(), 0xFF.toByte(), 0x00, 0x11)
+                    0x0C -> byteArrayOf(13, 0x0D) + idm + byteArrayOf(1, 0, 3)
+                    0x06 -> {
+                        val count = command[13].toInt() and 0xFF
+                        val blocks = if (historyReadCount++ == 0) {
+                            hexToBytes("1601000030B401020304DC0500002A00") + ByteArray((count - 1) * 16)
+                        } else {
+                            ByteArray(count * 16)
+                        }
+                        byteArrayOf((13 + blocks.size).toByte(), 0x07) + idm + byteArrayOf(0, 0, count.toByte()) + blocks
+                    }
+                    0x02 -> throw TagLostException("stop after history")
+                    else -> error("Unexpected FeliCa command")
+                }
+            },
+            context = context,
+        )
+
+        val fields = context.buildResult().decodedFields
+        assertTrue(fields.any { it.label.contains("history[0]") })
+        assertTrue(fields.any { it.label == "Suica.balance" && it.value == "1500" })
+    }
+
+    @Test
     fun cancelledAndExpiredReadersDoNotSendAnotherCommand() {
         var cancelled = false
         val sentAfterCancel = mutableListOf<ByteArray>()

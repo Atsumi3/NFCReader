@@ -101,7 +101,7 @@ class NfcDumpCollector(
             }
             technologies += NfcEntity(
                 techName = techName,
-                fields = metadata.fields + result.metadata + result.decodedFields + result.visibleIssues(),
+                fields = metadata.fields + result.metadata + result.decodedFields + result.issues.visibleIssues(),
                 readResult = result,
             )
         }

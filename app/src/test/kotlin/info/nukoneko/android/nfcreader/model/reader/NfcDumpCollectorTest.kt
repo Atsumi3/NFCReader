@@ -97,6 +97,18 @@ class NfcDumpCollectorTest {
     }
 
     @Test
+    fun readIssuesAreIncludedInVisibleTechnologyFields() {
+        val collector = collector("TechA")
+
+        collector.readAll(readTechnology = { _, context ->
+            context.markFailed(ReadIssue(ReadIssueKind.IO_ERROR, "Read failed."))
+        })
+
+        val fields = collector.snapshot().technologies.single().fields
+        assertTrue(fields.any { it.label == "Read.error" && it.value == "Read failed." })
+    }
+
+    @Test
     fun rawBudgetIsSharedAcrossTechnologiesAndTruncationIsVisible() {
         val collector = NfcDumpCollector(
             tagMetadata = NfcTagMetadata(techNames = listOf("TechA", "TechB")),

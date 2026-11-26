@@ -105,7 +105,7 @@ class NdefReader : TechReader {
                 val nested = decodeSmartPosterPayload(payload)
                 context.addDecodedFields(
                     nested.fields.map { field ->
-                        NfcField("$tag.smartPoster." + field.key, field.value)
+                        NfcField("$tag.smartPoster." + field.label, field.value)
                     }
                 )
                 nested.warnings.forEach { warning ->

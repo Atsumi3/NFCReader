@@ -124,7 +124,7 @@ class FelicaReader : TechReader {
         }
         if (systems.size == MAX_SYSTEMS && returnedSystems.orEmpty().size > MAX_SYSTEMS) {
             context.addUnreadRange(
-                UnreadRange("FeliCa systems", "system", MAX_SYSTEMS.toLong(), returnedSystems.size.toLong(), "System enumeration limit reached.")
+                UnreadRange("FeliCa systems", "system", MAX_SYSTEMS.toLong(), returnedSystems.orEmpty().size.toLong(), "System enumeration limit reached.")
             )
         }
         context.setCoverage(

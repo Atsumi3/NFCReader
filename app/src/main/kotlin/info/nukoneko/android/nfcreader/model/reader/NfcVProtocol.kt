@@ -110,12 +110,12 @@ fun parseNfcVSystemInformation(
 
 private const val UID_SIZE = 8
 private const val SYSTEM_INFO_HEADER_SIZE = 2 + UID_SIZE
-private const val ADDRESSED_HIGH_DATA_RATE = 0x22
-private const val GET_SYSTEM_INFORMATION = 0x2B
-private const val GET_EXTENDED_SYSTEM_INFORMATION = 0x3B
-private const val EXTENDED_INFO_FIELDS = 0x1F
-private const val READ_SINGLE_BLOCK = 0x20
-private const val EXTENDED_READ_SINGLE_BLOCK = 0x30
+private const val ADDRESSED_HIGH_DATA_RATE: Byte = 0x22
+private const val GET_SYSTEM_INFORMATION: Byte = 0x2B
+private const val GET_EXTENDED_SYSTEM_INFORMATION: Byte = 0x3B
+private const val EXTENDED_INFO_FIELDS: Byte = 0x1F
+private const val READ_SINGLE_BLOCK: Byte = 0x20
+private const val EXTENDED_READ_SINGLE_BLOCK: Byte = 0x30
 private const val ERROR_FLAG = 0x01
 private const val DSFID_PRESENT = 0x01
 private const val AFI_PRESENT = 0x02

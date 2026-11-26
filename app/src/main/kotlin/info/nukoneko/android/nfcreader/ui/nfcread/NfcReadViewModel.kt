@@ -354,7 +354,7 @@ class NfcReadViewModel : ViewModel() {
         message = when (exception) {
             is TagLostException -> "Tag left the NFC field during reading."
             is IOException -> "I/O failed while reading the tag."
-            else -> "Reader failed: ${exception::class.simpleName ?: "Exception"}.",
+            else -> "Reader failed: ${exception::class.simpleName ?: "Exception"}."
         },
         operation = operation,
     )

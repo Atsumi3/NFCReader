@@ -59,7 +59,7 @@ class NfcDispatchActivityTest {
 
         val launcherActivities = packageManager.queryIntentActivities(
             Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER),
-            PackageManager.MATCH_DEFAULT_ONLY,
+            0,
         )
         assertTrue(launcherActivities.any { it.activityInfo.name == NfcReadActivity::class.java.name })
 

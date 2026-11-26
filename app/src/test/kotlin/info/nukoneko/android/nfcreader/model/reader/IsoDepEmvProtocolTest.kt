@@ -155,7 +155,7 @@ class IsoDepEmvProtocolTest {
 
         val result = context.buildResult()
         assertEquals(1, commands.size)
-        assertTrue(result.rawChunks.any { it.label == "ISO-DEP APDU response" })
+        assertTrue(result.rawChunks.any { it.label == "ISO-DEP APDU response (data and status word)" })
         assertTrue(result.unreadRanges.any { it.reason.contains("cancelled", ignoreCase = true) })
         assertTrue(result.coverage.expectedRange == null)
     }

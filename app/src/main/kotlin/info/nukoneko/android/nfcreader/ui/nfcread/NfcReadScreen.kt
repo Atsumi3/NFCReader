@@ -27,6 +27,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material3.Button
+import androidx.compose.material3.BottomAppBar
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -135,6 +136,7 @@ internal fun NfcReadScreen(
 
     val saveText: (String) -> Unit = { save(it, "nfc-dump.txt", textExporter::launch) }
     val saveJson: (String) -> Unit = { save(it, "nfc-dump.json", jsonExporter::launch) }
+    val isReading = state.isReadingInProgress()
 
     Scaffold(
         modifier = modifier.fillMaxSize(),
@@ -164,6 +166,18 @@ internal fun NfcReadScreen(
                     }
                 },
             )
+        },
+        bottomBar = {
+            if (isReading) {
+                BottomAppBar {
+                    TextButton(
+                        onClick = onStopReading,
+                        modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
+                    ) {
+                        Text(stringResource(R.string.stop_reading))
+                    }
+                }
+            }
         },
     ) { innerPadding ->
         if (infoPage != 0) {
@@ -195,14 +209,13 @@ internal fun NfcReadScreen(
                         title = stringResource(R.string.please_hold_up_device),
                         description = stringResource(R.string.idle_read_only_description),
                     )
-                    ReadStatus.Reading -> ReadingMessage(onStopReading)
+                    ReadStatus.Reading -> ReadingMessage()
                     is ReadStatus.ReadingWithPrevious ->
                         NfcDumpContent(
-                            state.dump,
-                            stringResource(R.string.reading_new_tag),
-                            onStopReading,
-                            saveText,
-                            saveJson,
+                            dump = state.dump,
+                            statusMessage = stringResource(R.string.reading_new_tag),
+                            saveText = saveText,
+                            saveJson = saveJson,
                         )
 
                     is ReadStatus.Success -> NfcDumpContent(state.dump, saveText = saveText, saveJson = saveJson)
@@ -244,17 +257,17 @@ internal fun NfcReadScreen(
     }
 }
 
+internal fun ReadStatus.isReadingInProgress(): Boolean =
+    this == ReadStatus.Reading || this is ReadStatus.ReadingWithPrevious
+
 @Composable
-private fun ReadingMessage(onStopReading: () -> Unit) {
+private fun ReadingMessage() {
     ReaderStateCard(
         status = stringResource(R.string.state_reading),
         title = stringResource(R.string.reading_title),
         description = stringResource(R.string.reading_description),
         content = {
             CircularProgressIndicator()
-            TextButton(onClick = onStopReading, modifier = Modifier.heightIn(min = 48.dp)) {
-                Text(stringResource(R.string.stop_reading))
-            }
         },
     )
 }
@@ -296,7 +309,6 @@ internal fun createNfcSettingsIntent(): Intent = Intent(Settings.ACTION_NFC_SETT
 private fun NfcDumpContent(
     dump: NfcDump,
     statusMessage: String? = null,
-    onStopReading: (() -> Unit)? = null,
     saveText: (String) -> Unit,
     saveJson: (String) -> Unit,
     statusDescription: String? = null,
@@ -355,9 +367,6 @@ private fun NfcDumpContent(
     ) {
         statusMessage?.let { message ->
             item(key = "status-banner") { ReaderStatusBanner(message, statusDescription, statusActionLabel, onStatusAction) }
-        }
-        onStopReading?.let { stop ->
-            item(key = "stop-reading") { TextButton(onClick = stop, modifier = Modifier.heightIn(min = 48.dp)) { Text(stringResource(R.string.stop_reading)) } }
         }
         item(key = "sensitive-warning") {
             Text(stringResource(R.string.dump_sensitive_warning), style = MaterialTheme.typography.bodyMedium)

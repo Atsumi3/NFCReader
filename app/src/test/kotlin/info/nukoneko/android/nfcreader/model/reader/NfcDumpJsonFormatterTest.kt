@@ -24,6 +24,7 @@ class NfcDumpJsonFormatterTest {
             technologies = listOf(
                 NfcEntity(
                     techName = "Tech",
+                    fields = emptyList(),
                     readResult = TechReadResult(
                         rawChunks = listOf(RawChunk("response", hex = "00FF", sourceByteCount = 2, capturedByteCount = 2)),
                         decodedFields = listOf(NfcField("decoded", "value\"quoted")),

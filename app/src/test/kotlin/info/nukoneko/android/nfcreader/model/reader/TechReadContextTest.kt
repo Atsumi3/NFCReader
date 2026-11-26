@@ -105,5 +105,9 @@ class TechReadContextTest {
     private fun context(
         rawLimit: Int = DEFAULT_MAX_RAW_BYTES_PER_DUMP,
         fieldLimit: Int = DEFAULT_MAX_FIELD_VALUE_CHARS_PER_DUMP,
-    ) = TechReadContext(RawCaptureBudget(rawLimit), FieldValueBudget(fieldLimit)) {}
+    ) = TechReadContext(
+        RawCaptureBudget(rawLimit),
+        FieldValueBudget(fieldLimit),
+        cancellationCheck = {},
+    )
 }

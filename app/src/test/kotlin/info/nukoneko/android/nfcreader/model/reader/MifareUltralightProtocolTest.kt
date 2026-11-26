@@ -46,7 +46,7 @@ class MifareUltralightProtocolTest {
         assertEquals(12, fastReads.size)
         assertEquals(0x2C, fastReads.last()[2].toInt() and 0xFF)
         assertEquals(ReadOutcome.COMPLETE, context.buildResult().outcome)
-        assertTrue(context.buildResult().decodedFields.any { it.key == "Ultralight.page[44]" })
+        assertTrue(context.buildResult().decodedFields.any { it.label == "Ultralight.page[44]" })
     }
 
     @Test

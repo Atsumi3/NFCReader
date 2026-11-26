@@ -32,7 +32,7 @@ class NdefSmartPosterTest {
         assertTrue(isSmartPosterRecord(parsedRecord))
 
         val decoded = decodeSmartPosterPayload(parsedRecord.payload)
-        val fields = decoded.fields.associate { it.key to it.value }
+        val fields = decoded.fields.associate { it.label to it.value }
         assertEquals("https://example.com", fields["record[0].decoded"])
         assertEquals("Shop", fields["record[1].decoded"])
         assertEquals("en", fields["record[1].language"])
@@ -51,7 +51,7 @@ class NdefSmartPosterTest {
 
         val depthLimited = decodeSmartPosterPayload(payload, maxDepth = 0)
         assertTrue(depthLimited.warnings.any { it.contains("depth limit") })
-        assertFalse(depthLimited.fields.any { it.key.startsWith("record[0].smartPoster") })
+        assertFalse(depthLimited.fields.any { it.label.startsWith("record[0].smartPoster") })
 
         val recordLimited = decodeSmartPosterPayload(payload, maxRecords = 1)
         assertTrue(recordLimited.warnings.any { it.contains("record limit") })

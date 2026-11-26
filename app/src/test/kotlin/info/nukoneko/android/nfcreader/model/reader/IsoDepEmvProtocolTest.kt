@@ -66,8 +66,8 @@ class IsoDepEmvProtocolTest {
         })
         assertFalse(commands.any { it.size > 1 && (it[1].toInt() and 0xFF) == 0xA8 })
         assertArrayEquals(hexToBytes("010203"), hexToBytes(context.buildResult().decodedFields
-            .first { it.key == "IsoDep.app[0].record[1,1].log.9A" }.value!!))
-        assertTrue(context.buildResult().decodedFields.any { it.key == "IsoDep.app[0].record[1,2].log.extraByteCount" && it.value == "1" })
+            .first { it.label == "IsoDep.app[0].record[1,1].log.9A" }.value!!))
+        assertTrue(context.buildResult().decodedFields.any { it.label == "IsoDep.app[0].record[1,2].log.extraByteCount" && it.value == "1" })
         assertTrue(context.buildResult().rawChunks.any { it.label == "ISO-DEP log record bytes beyond 9F4F DOL" })
 
         val unknownSelectIndex = commands.indexOfFirst { it.contentEquals(buildSelect(unknown)) }
@@ -184,7 +184,11 @@ class IsoDepEmvProtocolTest {
         assertTrue(context.buildResult().issues.any { it.kind == ReadIssueKind.UNSUPPORTED_TECHNOLOGY })
     }
 
-    private fun newContext() = TechReadContext(RawCaptureBudget(), FieldValueBudget()) {}
+    private fun newContext() = TechReadContext(
+        RawCaptureBudget(),
+        FieldValueBudget(),
+        cancellationCheck = {},
+    )
 
     private fun status(data: ByteArray = byteArrayOf()) = data + hexToBytes("9000")
 

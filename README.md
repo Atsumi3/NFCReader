@@ -36,3 +36,5 @@ https://github.com/Atsumi3/NFCReader/releases/download/2.0.1/nfcreader-2.0.1.apk
 ```
 
 GitHub ActionsはJDK 21でPull Requestと`develop`へのpushを検証し、SDK Platform 37.1とBuild Tools 37.0.0をインストールします。
+
+成功したrunはDebug APKを`debug-apk` artifactとして7日間保存します。

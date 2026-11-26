@@ -12,6 +12,7 @@ import info.nukoneko.android.nfcreader.model.entity.RawChunk
 import info.nukoneko.android.nfcreader.model.entity.ReadRange
 import info.nukoneko.android.nfcreader.model.entity.TechReadResult
 import info.nukoneko.android.nfcreader.model.entity.UnreadRange
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -44,4 +45,44 @@ class NfcDumpTextFormatterTest {
         assertTrue(text.contains("Issue [IO_ERROR]"))
         assertTrue(text.contains("Unread blocks block 1..2 exclusive: not read"))
     }
+
+    @Test
+    fun preservesEarlierCoverageDetailsAndPrintsLatestCoverageOnce() {
+        val suica = ReadCoverage("Suica history", "block", ReadRange(0, 20), listOf(ReadRange(0, 20)))
+        val service = ReadCoverage("standard service", "candidate", ReadRange(0, 2048), listOf(ReadRange(0, 32)))
+        val systems = ReadCoverage("FeliCa systems", "system", ReadRange(0, 2), listOf(ReadRange(0, 2)))
+        val entity = NfcEntity(
+            techName = "android.nfc.tech.NfcF",
+            fields = emptyList(),
+            readResult = TechReadResult(
+                coverage = systems,
+                coverageDetails = listOf(suica, service, systems),
+                outcome = ReadOutcome.PARTIAL,
+            ),
+        )
+
+        val text = NfcDumpTextFormatter.formatTechnology(entity)
+
+        assertEquals(1, text.countOccurrences("Additional coverage: Suica history"))
+        assertEquals(1, text.countOccurrences("Additional coverage: standard service"))
+        assertEquals(1, text.countOccurrences("Coverage: FeliCa systems"))
+        assertEquals(0, text.countOccurrences("Additional coverage: FeliCa systems"))
+    }
+
+    private fun String.countOccurrences(value: String): Int = split(value).size - 1
+
+    private fun entityWith(value: String) = NfcEntity(
+        techName = "android.nfc.tech.NfcA",
+        fields = emptyList(),
+        readResult = TechReadResult(
+            decodedFields = listOf(NfcField("example", value)),
+            outcome = ReadOutcome.COMPLETE,
+        ),
+    )
+
+    private fun dumpWith(entity: NfcEntity) = NfcDump(
+        tag = NfcTagMetadata(techNames = listOf(entity.techName)),
+        technologies = listOf(entity),
+        capturedAtEpochMillis = 1L,
+    )
 }

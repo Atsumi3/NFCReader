@@ -388,17 +388,7 @@ private fun LazyListScope.addTechnologyDetails(
     }
     item(key = "coverage:${entity.techName}") {
         SectionTitle(stringResource(R.string.coverage_section))
-        Text(
-            "${result.coverage.scope} (${result.coverage.unit}) — complete=${result.coverage.isComplete}",
-            modifier = Modifier.padding(horizontal = 12.dp),
-        )
-        result.coverage.expectedRange?.let {
-            Text(
-                "Expected: ${it.startInclusive}..${it.endExclusive} exclusive (${result.coverage.unit})",
-                modifier = Modifier.padding(horizontal = 12.dp),
-            )
-        }
-        result.coverageDetails.drop(1).forEach { detail ->
+        result.coverageDetails.dropLast(1).forEach { detail ->
             Text(
                 "${detail.scope} (${detail.unit}) — complete=${detail.isComplete}",
                 modifier = Modifier.padding(horizontal = 12.dp),
@@ -409,6 +399,16 @@ private fun LazyListScope.addTechnologyDetails(
                     modifier = Modifier.padding(horizontal = 12.dp),
                 )
             }
+        }
+        Text(
+            "${result.coverage.scope} (${result.coverage.unit}) — complete=${result.coverage.isComplete}",
+            modifier = Modifier.padding(horizontal = 12.dp),
+        )
+        result.coverage.expectedRange?.let {
+            Text(
+                "Expected: ${it.startInclusive}..${it.endExclusive} exclusive (${result.coverage.unit})",
+                modifier = Modifier.padding(horizontal = 12.dp),
+            )
         }
     }
     if (result.issues.isNotEmpty()) {

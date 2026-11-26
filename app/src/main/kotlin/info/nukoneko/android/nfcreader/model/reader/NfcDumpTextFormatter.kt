@@ -20,12 +20,12 @@ object NfcDumpTextFormatter {
         val result = entity.readResult
         appendLine("Technology: ${entity.techName}")
         appendLine("Outcome: ${result.outcome}")
-        appendLine("Coverage: ${result.coverage.scope} (${result.coverage.unit}); complete=${result.coverage.isComplete}")
-        result.coverage.expectedRange?.let { appendLine("Expected range: ${it.startInclusive}..${it.endExclusive} exclusive") }
-        result.coverageDetails.drop(1).forEach { detail ->
+        result.coverageDetails.dropLast(1).forEach { detail ->
             appendLine("Additional coverage: ${detail.scope} (${detail.unit}); complete=${detail.isComplete}")
             detail.expectedRange?.let { appendLine("Expected range: ${it.startInclusive}..${it.endExclusive} exclusive") }
         }
+        appendLine("Coverage: ${result.coverage.scope} (${result.coverage.unit}); complete=${result.coverage.isComplete}")
+        result.coverage.expectedRange?.let { appendLine("Expected range: ${it.startInclusive}..${it.endExclusive} exclusive") }
         result.metadata.forEach { appendLine("Metadata.${it.label}: ${it.value ?: "-"}") }
         result.rawChunks.forEach { chunk ->
             appendLine("Raw.${chunk.label}${chunk.location?.let { " [$it]" }.orEmpty()}: ${chunk.hex}")

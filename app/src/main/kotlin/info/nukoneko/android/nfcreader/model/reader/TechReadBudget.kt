@@ -31,8 +31,12 @@ internal class TechReadBudget(
     private var forcedExpired = false
 
     @Synchronized
+    fun deadlineFailureReason(): String? =
+        if (deadlineExpired()) "Technology read deadline reached." else null
+
+    @Synchronized
     fun failureReason(): String? = when {
-        forcedExpired || clockNanos() >= deadlineNanos -> "Technology read deadline reached."
+        deadlineExpired() -> "Technology read deadline reached."
         transceives >= limits.maxTransceives -> "Technology transceive limit reached."
         else -> null
     }
@@ -51,6 +55,8 @@ internal class TechReadBudget(
 
     @Synchronized
     fun transceiveCount(): Int = transceives
+
+    private fun deadlineExpired(): Boolean = forcedExpired || clockNanos() >= deadlineNanos
 
     fun remainingTimeoutMillis(): Long =
         ((deadlineNanos - clockNanos()).coerceAtLeast(0L) / NANOS_PER_MILLI)

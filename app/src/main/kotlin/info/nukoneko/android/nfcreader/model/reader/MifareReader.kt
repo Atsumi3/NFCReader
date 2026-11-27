@@ -78,6 +78,7 @@ class MifareClassicReader : TechReader {
             } catch (exception: ReadBudgetExceededException) {
                 throw exception
             } catch (exception: Exception) {
+                context.checkDeadline()
                 if (exception is TagLostException) throw exception
                 recordIoFailure(context, exception, "sector $sector")
                 context.addUnreadRange(
@@ -126,6 +127,7 @@ class MifareClassicReader : TechReader {
                 } catch (exception: ReadBudgetExceededException) {
                     throw exception
                 } catch (exception: Exception) {
+                    context.checkDeadline()
                     if (exception is TagLostException) throw exception
                     recordIoFailure(context, exception, "block $block")
                     var recovered: ByteArray? = null
@@ -148,6 +150,7 @@ class MifareClassicReader : TechReader {
                         } catch (retryException: ReadBudgetExceededException) {
                             throw retryException
                         } catch (retryException: Exception) {
+                            context.checkDeadline()
                             if (retryException is TagLostException) throw retryException
                             recordIoFailure(context, retryException, "block $block Key B $candidateName")
                         }
@@ -160,6 +163,7 @@ class MifareClassicReader : TechReader {
                         } catch (restoreException: ReadBudgetExceededException) {
                             throw restoreException
                         } catch (restoreException: Exception) {
+                            context.checkDeadline()
                             if (restoreException is TagLostException) throw restoreException
                             recordIoFailure(context, restoreException, "sector $sector authentication restore")
                             false

@@ -1,7 +1,8 @@
 # NFCReader
 
-NFCタグを読み取り、取得できた情報を表示するAndroidアプリです。タグや端末によって読み取れない情報があり、タグへの書き込みは行いません。
+NFCタグの情報を読み取って表示する、読み取り専用のAndroidアプリです。
 
 ## インストール
 
-[GitHub Releases](https://github.com/Atsumi3/NFCReader/releases/latest)からAPKをダウンロードし、NFC対応のAndroid端末で開いてください。初回は、ダウンロードに使ったアプリからのインストールを許可してください。
+1. [GitHub Releases](https://github.com/Atsumi3/NFCReader/releases/latest)からAPKをダウンロードします。
+2. NFC対応のAndroid端末でAPKを開き、画面の案内に沿ってインストールします。インストールがブロックされた場合は、APKを開いたアプリからのインストールを許可してください。

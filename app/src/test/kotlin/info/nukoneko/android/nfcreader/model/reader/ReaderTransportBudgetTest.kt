@@ -1,6 +1,7 @@
 package info.nukoneko.android.nfcreader.model.reader
 
 import android.nfc.TagLostException
+import android.nfc.tech.MifareClassic
 import info.nukoneko.android.nfcreader.extensions.hexToBytes
 import info.nukoneko.android.nfcreader.model.entity.DEFAULT_MAX_FIELD_VALUE_CHARS_PER_DUMP
 import info.nukoneko.android.nfcreader.model.entity.DEFAULT_MAX_RAW_BYTES_PER_DUMP
@@ -140,6 +141,60 @@ class ReaderTransportBudgetTest {
         assertTrue(keyAKeys[0].contentEquals(keyAKeys[1]))
         assertTrue(result.decodedFields.any { it.label == "Classic.block[2]" })
         assertTrue(result.coverage.completedRanges.any { it.startInclusive == 2L && it.endExclusive == 3L })
+        assertTrue(!result.coverage.isComplete)
+    }
+
+    @Test
+    fun mifareClassicRestoresPreviouslySuccessfulKeyBAfterLaterReadFailure() {
+        var authenticatedAs: String? = null
+        var keyACalls = 0
+        var successfulKeyBCalls = 0
+        val readAttempts = mutableMapOf<Int, Int>()
+        val readBlocks = mutableListOf<Int>()
+        val transport = object : MifareClassicTransport {
+            override val sectorCount: Int = 1
+            override fun sectorToBlock(sector: Int): Int = 0
+            override fun blockCountInSector(sector: Int): Int = 4
+            override fun authenticateKeyA(sector: Int, key: ByteArray): Boolean {
+                keyACalls++
+                authenticatedAs = "A"
+                return true
+            }
+            override fun authenticateKeyB(sector: Int, key: ByteArray): Boolean {
+                if (key.contentEquals(MifareClassic.KEY_DEFAULT)) {
+                    successfulKeyBCalls++
+                    authenticatedAs = "B"
+                    return true
+                }
+                authenticatedAs = null
+                return false
+            }
+            override fun readBlock(block: Int): ByteArray {
+                readBlocks += block
+                val attempt = (readAttempts[block] ?: 0) + 1
+                readAttempts[block] = attempt
+                if ((block == 0 && attempt == 1) || (block == 1 && attempt <= 2)) {
+                    authenticatedAs = null
+                    throw IOException("force a later Key B restoration")
+                }
+                if (authenticatedAs != "B") throw IOException("previous Key B authentication was not restored")
+                return ByteArray(16) { block.toByte() }
+            }
+        }
+        val readContext = context()
+
+        MifareClassicReader().readWithTransport(transport, readContext)
+
+        val result = readContext.buildResult()
+        assertEquals(listOf(0, 0, 1, 1, 2, 3), readBlocks)
+        assertEquals(1, keyACalls)
+        assertEquals(3, successfulKeyBCalls)
+        assertTrue(result.coverage.completedRanges.any { it.startInclusive == 0L && it.endExclusive == 1L })
+        assertTrue(result.coverage.completedRanges.any { it.startInclusive == 2L && it.endExclusive == 3L })
+        assertTrue(result.coverage.completedRanges.any { it.startInclusive == 3L && it.endExclusive == 4L })
+        assertTrue(result.unreadRanges.any {
+            it.scope == "MIFARE Classic blocks" && it.startInclusive == 1L && it.endExclusive == 2L
+        })
         assertTrue(!result.coverage.isComplete)
     }
 

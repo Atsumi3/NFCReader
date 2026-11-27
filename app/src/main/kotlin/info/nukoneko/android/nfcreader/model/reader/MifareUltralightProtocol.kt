@@ -15,6 +15,8 @@ internal data class UltralightVersionProfile(
     val name: String,
     val lastPage: Int,
     val version: ByteArray,
+    val pwdPage: Int,
+    val packPage: Int,
 )
 
 internal object MifareUltralightProtocol {
@@ -24,11 +26,11 @@ internal object MifareUltralightProtocol {
     const val READ_RESPONSE_SIZE = 16
 
     private val profiles = listOf(
-        UltralightVersionProfile("NTAG213", 0x2C, byteArrayOf(0, 4, 4, 2, 1, 0, 0x0F, 3)),
-        UltralightVersionProfile("NTAG215", 0x86, byteArrayOf(0, 4, 4, 2, 1, 0, 0x11, 3)),
-        UltralightVersionProfile("NTAG216", 0xE6, byteArrayOf(0, 4, 4, 2, 1, 0, 0x13, 3)),
-        UltralightVersionProfile("Ultralight EV1 MF0UL11", 0x13, byteArrayOf(0, 4, 3, 1, 1, 0, 0x0B, 3)),
-        UltralightVersionProfile("Ultralight EV1 MF0UL21", 0x28, byteArrayOf(0, 4, 3, 2, 1, 0, 0x0E, 3)),
+        UltralightVersionProfile("NTAG213", 0x2C, byteArrayOf(0, 4, 4, 2, 1, 0, 0x0F, 3), 0x2B, 0x2C),
+        UltralightVersionProfile("NTAG215", 0x86, byteArrayOf(0, 4, 4, 2, 1, 0, 0x11, 3), 0x85, 0x86),
+        UltralightVersionProfile("NTAG216", 0xE6, byteArrayOf(0, 4, 4, 2, 1, 0, 0x13, 3), 0xE5, 0xE6),
+        UltralightVersionProfile("Ultralight EV1 MF0UL11", 0x13, byteArrayOf(0, 4, 3, 1, 1, 0, 0x0B, 3), 0x12, 0x13),
+        UltralightVersionProfile("Ultralight EV1 MF0UL21", 0x28, byteArrayOf(0, 4, 3, 2, 1, 0, 0x0E, 3), 0x27, 0x28),
     )
 
     fun getVersionCommand(): ByteArray = byteArrayOf(0x60)
@@ -84,6 +86,7 @@ internal object MifareUltralightProtocol {
     private fun readKnownProfile(transport: ReadOnlyTransport, context: TechReadContext, profile: UltralightVersionProfile) {
         val pageCount = profile.lastPage + 1
         val completed = mutableListOf<ReadRange>()
+        val maskedPagesRead = mutableSetOf<Int>()
         var page = 0
         var stoppedAt: Int? = null
         var fastReadUsedFallback = false
@@ -115,8 +118,7 @@ internal object MifareUltralightProtocol {
                 for (offset in 0..(end - page)) {
                     val currentPage = page + offset
                     val bytes = response.copyOfRange(offset * PAGE_SIZE, (offset + 1) * PAGE_SIZE)
-                    recordPage(context, currentPage, bytes)
-                    completed += ReadRange(currentPage.toLong(), currentPage + 1L)
+                    recordKnownPage(context, profile, currentPage, bytes, completed, maskedPagesRead)
                 }
                 page = end + 1
                 continue
@@ -131,8 +133,7 @@ internal object MifareUltralightProtocol {
                     stoppedAt = fallbackPage
                     break
                 }
-                recordPage(context, fallbackPage, bytes)
-                completed += ReadRange(fallbackPage.toLong(), fallbackPage + 1L)
+                recordKnownPage(context, profile, fallbackPage, bytes, completed, maskedPagesRead)
             }
             if (stoppedAt != null) break
             page = end + 1
@@ -165,6 +166,8 @@ internal object MifareUltralightProtocol {
         }
         if (stoppedAt != null) {
             context.addUnreadRange(UnreadRange("%s pages".format(profile.name), "page", stoppedAt.toLong(), pageCount.toLong(), "FAST_READ and single-page READ did not obtain this page."))
+            context.markPartial()
+        } else if (maskedPagesRead.isNotEmpty()) {
             context.markPartial()
         } else {
             context.markComplete()
@@ -231,6 +234,41 @@ internal object MifareUltralightProtocol {
     private fun recordPage(context: TechReadContext, page: Int, bytes: ByteArray) {
         context.captureRaw("MIFARE page", bytes, "page $page")
         context.addDecodedFields(listOf(NfcField("Ultralight.page[$page]", bytes.toHexString())))
+    }
+
+    private fun recordKnownPage(
+        context: TechReadContext,
+        profile: UltralightVersionProfile,
+        page: Int,
+        bytes: ByteArray,
+        completed: MutableList<ReadRange>,
+        maskedPagesRead: MutableSet<Int>,
+    ) {
+        if (page == profile.pwdPage || page == profile.packPage) {
+            context.captureRaw("MIFARE masked PWD/PACK page response", bytes, "page $page")
+            context.addDecodedFields(listOf(NfcField("Ultralight.page[$page]", "tag-masked response; actual PWD/PACK value is unknown")))
+            context.addUnreadRange(
+                UnreadRange(
+                    scope = "${profile.name} PWD/PACK pages",
+                    unit = "page",
+                    startInclusive = page.toLong(),
+                    endExclusive = page + 1L,
+                    reason = "The tag masks PWD/PACK bytes; the actual value cannot be read.",
+                )
+            )
+            if (maskedPagesRead.add(page)) {
+                context.addIssue(
+                    ReadIssue(
+                        ReadIssueKind.DATA_REDACTED,
+                        "The tag masks PWD/PACK bytes in read responses; their configured values are unknown.",
+                        "${profile.name} page $page",
+                    )
+                )
+            }
+        } else {
+            recordPage(context, page, bytes)
+            completed += ReadRange(page.toLong(), page + 1L)
+        }
     }
 
     private fun issueFor(exception: Exception, operation: String) = ReadIssue(

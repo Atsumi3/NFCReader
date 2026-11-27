@@ -1,7 +1,9 @@
 package info.nukoneko.android.nfcreader.model.reader
 
 import info.nukoneko.android.nfcreader.model.entity.ReadOutcome
+import info.nukoneko.android.nfcreader.model.entity.ReadIssueKind
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -46,8 +48,59 @@ class MifareUltralightProtocolTest {
         val fastReads = commands.filter { (it[0].toInt() and 0xFF) == 0x3A }
         assertEquals(12, fastReads.size)
         assertEquals(0x2C, fastReads.last()[2].toInt() and 0xFF)
-        assertEquals(ReadOutcome.COMPLETE, context.buildResult().outcome)
+        assertEquals(ReadOutcome.PARTIAL, context.buildResult().outcome)
         assertTrue(context.buildResult().decodedFields.any { it.label == "Ultralight.page[44]" })
+    }
+
+    @Test
+    fun pwdAndPackPagesRemainRawButAreReportedAsUnknownForKnownProfiles() {
+        val profiles = listOf(
+            Triple(byteArrayOf(0, 4, 4, 2, 1, 0, 0x0F, 3), 0x2B, 0x2C),
+            Triple(byteArrayOf(0, 4, 4, 2, 1, 0, 0x11, 3), 0x85, 0x86),
+            Triple(byteArrayOf(0, 4, 4, 2, 1, 0, 0x13, 3), 0xE5, 0xE6),
+            Triple(byteArrayOf(0, 4, 3, 1, 1, 0, 0x0B, 3), 0x12, 0x13),
+            Triple(byteArrayOf(0, 4, 3, 2, 1, 0, 0x0E, 3), 0x27, 0x28),
+        )
+
+        profiles.forEach { (version, pwdPage, packPage) ->
+            val context = newContext()
+            val transport = ReadOnlyTransport { command ->
+                when (command[0].toInt() and 0xFF) {
+                    0x60 -> version
+                    0x3A -> {
+                        val start = command[1].toInt() and 0xFF
+                        val end = command[2].toInt() and 0xFF
+                        ByteArray((end - start + 1) * MifareUltralightProtocol.PAGE_SIZE) { index ->
+                            val page = start + index / MifareUltralightProtocol.PAGE_SIZE
+                            if (page == pwdPage || page == packPage) 0.toByte() else (page + 1).toByte()
+                        }
+                    }
+                    else -> error("Unexpected command")
+                }
+            }
+
+            MifareUltralightProtocol.read(transport, context)
+
+            val result = context.buildResult()
+            assertEquals(ReadOutcome.PARTIAL, result.outcome)
+            assertFalse(result.coverage.isComplete)
+            listOf(pwdPage, packPage).forEach { page ->
+                assertTrue(result.unreadRanges.any {
+                    it.startInclusive == page.toLong() && it.endExclusive == page + 1L
+                })
+                assertTrue(result.coverage.completedRanges.none {
+                    it.startInclusive <= page.toLong() && it.endExclusive > page.toLong()
+                })
+                assertTrue(result.rawChunks.any {
+                    it.label == "MIFARE masked PWD/PACK page response" &&
+                        it.location == "page $page" && it.hex == "00000000"
+                })
+                assertTrue(result.decodedFields.any {
+                    it.label == "Ultralight.page[$page]" && it.value.contains("unknown")
+                })
+            }
+            assertTrue(result.issues.any { it.kind == ReadIssueKind.DATA_REDACTED })
+        }
     }
 
     @Test
@@ -79,7 +132,7 @@ class MifareUltralightProtocolTest {
         val firstChunkCommands = commands.drop(1).take(5).map { it[0].toInt() and 0xFF }
         assertEquals(listOf(0x3A, 0x30, 0x30, 0x30, 0x30), firstChunkCommands)
         assertEquals(4, commands.drop(1).take(5).drop(1).map { it[1].toInt() and 0xFF }.toSet().size)
-        assertEquals(ReadOutcome.COMPLETE, context.buildResult().outcome)
+        assertEquals(ReadOutcome.PARTIAL, context.buildResult().outcome)
     }
 
     @Test

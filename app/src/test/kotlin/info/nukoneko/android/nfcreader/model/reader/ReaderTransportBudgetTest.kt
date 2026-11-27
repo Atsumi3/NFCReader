@@ -266,6 +266,37 @@ class ReaderTransportBudgetTest {
     }
 
     @Test
+    fun nfcVBlockBudgetKeepsCompletedAndUnreadCoverageBeforeStopping() {
+        val uid = byteArrayOf(1, 2, 3, 4, 5, 6, 7, 8)
+        val sent = mutableListOf<ByteArray>()
+        val readContext = context(limits = TechReadLimits(timeoutMillis = 30_000, maxTransceives = 2))
+
+        try {
+            NfcVReader().readWithTransport(
+                uid = uid,
+                maxTransceiveLength = 255,
+                transport = ReadOnlyTransport { command ->
+                    sent += command.copyOf()
+                    when (command[1].toInt() and 0xFF) {
+                        0x2B -> byteArrayOf(0x00, 0x04) + uid + byteArrayOf(3, 3)
+                        0x20 -> byteArrayOf(0, 1, 2, 3, 4)
+                        else -> error("Unexpected NFC-V command")
+                    }
+                },
+                context = readContext,
+            )
+        } catch (_: ReadBudgetExceededException) {
+        }
+
+        val result = readContext.buildResult()
+        assertEquals(2, sent.size)
+        assertEquals(1, sent.count { (it[1].toInt() and 0xFF) == 0x20 })
+        assertEquals(listOf(ReadRange(0, 1)), result.coverage.completedRanges)
+        assertTrue(result.unreadRanges.any { it.startInclusive == 1L && it.endExclusive == 4L })
+        assertTrue(result.issues.any { it.kind == ReadIssueKind.BUDGET_EXHAUSTED })
+    }
+
+    @Test
     fun felicaDistributesTheUnchangedBatchLimitAcrossAdvertisedSystems() {
         val idm = byteArrayOf(1, 2, 3, 4, 5, 6, 7, 8)
         val commands = mutableListOf<ByteArray>()

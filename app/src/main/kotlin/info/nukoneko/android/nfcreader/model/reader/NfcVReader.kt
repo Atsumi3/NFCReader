@@ -180,6 +180,30 @@ class NfcVReader : TechReader {
             completedBlocks += ReadRange(block.toLong(), block + 1L)
             currentBlock = block + 1
         }
+        } catch (budgetExceeded: ReadBudgetExceededException) {
+            val expectedEnd = knownBlockCount?.toLong() ?: scanLimit.toLong()
+            val unreadFrom = unreadStart ?: currentBlock
+            if (unreadFrom.toLong() < expectedEnd) {
+                context.addUnreadRange(
+                    UnreadRange("NFC-V block range", "block", unreadFrom.toLong(), expectedEnd, "Read budget exceeded; remaining blocks were not requested.")
+                )
+            }
+            if (knownBlockCount == null) {
+                context.addIssue(ReadIssue(ReadIssueKind.COVERAGE_UNKNOWN, "No validated capacity was returned; the bounded scan is not a complete tag dump.", "NFC-V capacity"))
+            } else if (knownBlockCount > MAX_BLOCKS_PER_TECH) {
+                context.addUnreadRange(UnreadRange("NFC-V block range", "block", MAX_BLOCKS_PER_TECH.toLong(), knownBlockCount.toLong(), "Application read limit reached."))
+            }
+            val coverageEnd = knownBlockCount?.coerceAtMost(MAX_BLOCKS_PER_TECH)?.toLong() ?: scanLimit.toLong()
+            context.setCoverage(
+                ReadCoverage(
+                    scope = if (knownBlockCount == null) "NFC-V bounded block scan (capacity unknown)" else "NFC-V reported user-memory blocks",
+                    unit = "block",
+                    expectedRange = ReadRange(0, coverageEnd),
+                    completedRanges = completedBlocks,
+                )
+            )
+            context.markPartial()
+            throw budgetExceeded
         } catch (cancelled: CancellationException) {
             val expectedEnd = knownBlockCount?.toLong() ?: scanLimit.toLong()
             val unreadFrom = unreadStart ?: currentBlock

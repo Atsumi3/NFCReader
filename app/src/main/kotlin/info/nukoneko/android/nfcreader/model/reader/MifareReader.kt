@@ -33,6 +33,17 @@ class MifareUltralightReader : TechReader {
 
 /** Dumps MIFARE Classic sectors that open with a well-known default key. */
 class MifareClassicReader : TechReader {
+    private enum class KeyType(val label: String) {
+        A("Key A"),
+        B("Key B"),
+    }
+
+    private data class Authentication(
+        val key: ByteArray,
+        val type: KeyType,
+        val candidateName: String,
+    )
+
     override val techName: String = "android.nfc.tech.MifareClassic"
 
     override fun read(tech: TagTechnology, context: TechReadContext) {
@@ -60,8 +71,8 @@ class MifareClassicReader : TechReader {
             val blockCount = mfc.blockCountInSector(sector)
             nextBlock = firstBlock
             context.checkpoint()
-            val key = try {
-                DEFAULT_KEYS.firstOrNull { authenticate(mfc, sector, it.first, context) }
+            val authentication = try {
+                authenticateAnyDefaultKey(mfc, sector, context)
             } catch (exception: CancellationException) {
                 throw exception
             } catch (exception: ReadBudgetExceededException) {
@@ -81,7 +92,7 @@ class MifareClassicReader : TechReader {
                 nextBlock = firstBlock + blockCount
                 continue
             }
-            if (key == null) {
+            if (authentication == null) {
                 context.addDecodedFields(listOf(NfcField("Classic.sector[$sector]", "既存の既定鍵では認証できません")))
                 context.addIssue(
                     ReadIssue(
@@ -102,7 +113,8 @@ class MifareClassicReader : TechReader {
                 nextBlock = firstBlock + blockCount
                 continue
             }
-            context.addDecodedFields(listOf(NfcField("Classic.sector[$sector].authentication", "existing built-in candidate ${key.second} accepted")))
+            context.addDecodedFields(listOf(NfcField("Classic.sector[$sector].authentication", "${authentication.type.label} / existing built-in candidate ${authentication.candidateName} accepted")))
+            var activeAuthentication = authentication
             for (block in firstBlock until firstBlock + blockCount) {
                 nextBlock = block
                 context.checkpoint()
@@ -120,6 +132,7 @@ class MifareClassicReader : TechReader {
                         break@sectorLoop
                     }
                     var recovered: ByteArray? = null
+                    var recoveredAuthentication: Authentication? = null
                     for ((candidate, candidateName) in DEFAULT_KEYS) {
                         context.checkpoint()
                         try {
@@ -128,6 +141,7 @@ class MifareClassicReader : TechReader {
                                 context.reserveTransceive("MIFARE Classic block read")
                                 recovered = mfc.readBlock(block)
                                 if (recovered.size == 16) {
+                                    recoveredAuthentication = Authentication(candidate, KeyType.B, candidateName)
                                     context.addDecodedFields(listOf(NfcField("Classic.block[$block].recoveredWith", "Key B / $candidateName")))
                                     break
                                 }
@@ -146,9 +160,43 @@ class MifareClassicReader : TechReader {
                     }
                     if (recovered == null || recovered.size != 16) {
                         context.addUnreadRange(UnreadRange("MIFARE Classic blocks", "block", block.toLong(), (block + 1).toLong(), "Read failed with the existing Key B candidates."))
+                        val restored = try {
+                            authenticate(mfc, sector, activeAuthentication, context)
+                        } catch (restoreException: CancellationException) {
+                            throw restoreException
+                        } catch (restoreException: ReadBudgetExceededException) {
+                            throw restoreException
+                        } catch (restoreException: Exception) {
+                            recordIoFailure(context, restoreException, "sector $sector authentication restore")
+                            false
+                        }
+                        if (!restored) {
+                            context.addIssue(
+                                ReadIssue(
+                                    ReadIssueKind.AUTHENTICATION_REQUIRED,
+                                    "The successful sector authentication could not be restored; remaining blocks were not requested.",
+                                    "sector $sector",
+                                )
+                            )
+                            val sectorEnd = firstBlock + blockCount
+                            if (block + 1 < sectorEnd) {
+                                context.addUnreadRange(
+                                    UnreadRange(
+                                        "MIFARE Classic blocks",
+                                        "block",
+                                        (block + 1).toLong(),
+                                        sectorEnd.toLong(),
+                                        "The original successful authentication was not restored.",
+                                    )
+                                )
+                            }
+                            nextBlock = sectorEnd
+                            break
+                        }
                         nextBlock = block + 1
                         continue
                     }
+                    activeAuthentication = recoveredAuthentication ?: activeAuthentication
                     recovered
                 }
                 val isTrailer = block == firstBlock + blockCount - 1
@@ -210,11 +258,27 @@ class MifareClassicReader : TechReader {
         if (completedBlocks.size == totalBlocks) context.markComplete() else context.markPartial()
     }
 
-    private fun authenticate(mfc: MifareClassicTransport, sector: Int, key: ByteArray, context: TechReadContext): Boolean {
-        context.reserveTransceive("MIFARE Classic Key A authentication")
-        if (mfc.authenticateKeyA(sector, key)) return true
-        context.reserveTransceive("MIFARE Classic Key B authentication")
-        return mfc.authenticateKeyB(sector, key)
+    private fun authenticateAnyDefaultKey(mfc: MifareClassicTransport, sector: Int, context: TechReadContext): Authentication? {
+        for ((key, candidateName) in DEFAULT_KEYS) {
+            val keyA = Authentication(key, KeyType.A, candidateName)
+            if (authenticate(mfc, sector, keyA, context)) return keyA
+            val keyB = Authentication(key, KeyType.B, candidateName)
+            if (authenticate(mfc, sector, keyB, context)) return keyB
+        }
+        return null
+    }
+
+    private fun authenticate(mfc: MifareClassicTransport, sector: Int, authentication: Authentication, context: TechReadContext): Boolean {
+        return when (authentication.type) {
+            KeyType.A -> {
+                context.reserveTransceive("MIFARE Classic Key A authentication")
+                mfc.authenticateKeyA(sector, authentication.key)
+            }
+            KeyType.B -> {
+                context.reserveTransceive("MIFARE Classic Key B authentication")
+                mfc.authenticateKeyB(sector, authentication.key)
+            }
+        }
     }
 
     private fun recordIoFailure(context: TechReadContext, exception: Exception, operation: String) {

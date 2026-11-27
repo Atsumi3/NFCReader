@@ -11,6 +11,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
+import java.io.IOException
 import java.util.concurrent.CancellationException
 
 @RunWith(RobolectricTestRunner::class)
@@ -101,6 +102,45 @@ class ReaderTransportBudgetTest {
         assertEquals(listOf(0), reads)
         assertEquals(listOf(ReadRange(0, 1)), result.coverage.completedRanges)
         assertTrue(result.unreadRanges.any { it.startInclusive == 1L && it.endExclusive == 4L })
+    }
+
+    @Test
+    fun mifareClassicRestoresSuccessfulAuthenticationAfterFailedKeyBProbes() {
+        var authenticated = false
+        var keyACalls = 0
+        val keyAKeys = mutableListOf<ByteArray>()
+        val readBlocks = mutableListOf<Int>()
+        val transport = object : MifareClassicTransport {
+            override val sectorCount: Int = 1
+            override fun sectorToBlock(sector: Int): Int = 0
+            override fun blockCountInSector(sector: Int): Int = 4
+            override fun authenticateKeyA(sector: Int, key: ByteArray): Boolean {
+                keyACalls++
+                keyAKeys += key.copyOf()
+                authenticated = true
+                return true
+            }
+            override fun authenticateKeyB(sector: Int, key: ByteArray): Boolean {
+                authenticated = false
+                return false
+            }
+            override fun readBlock(block: Int): ByteArray {
+                readBlocks += block
+                if (!authenticated || block == 1) throw IOException("read failed")
+                return ByteArray(16) { block.toByte() }
+            }
+        }
+        val readContext = context()
+
+        MifareClassicReader().readWithTransport(transport, readContext)
+
+        val result = readContext.buildResult()
+        assertEquals(listOf(0, 1, 2, 3), readBlocks)
+        assertEquals(2, keyACalls)
+        assertTrue(keyAKeys[0].contentEquals(keyAKeys[1]))
+        assertTrue(result.decodedFields.any { it.label == "Classic.block[2]" })
+        assertTrue(result.coverage.completedRanges.any { it.startInclusive == 2L && it.endExclusive == 3L })
+        assertTrue(!result.coverage.isComplete)
     }
 
     @Test

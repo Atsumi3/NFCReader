@@ -11,6 +11,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.size
@@ -618,11 +619,11 @@ private fun TechnologyHeader(
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            TextButton(onClick = onToggle, modifier = Modifier.weight(1f).heightIn(min = 48.dp)) {
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            TextButton(onClick = onToggle, modifier = Modifier.heightIn(min = 48.dp)) {
                 Text(stringResource(if (expanded) R.string.collapse_details else R.string.expand_details))
             }
-            TextButton(onClick = onCopy, modifier = Modifier.weight(1f).heightIn(min = 48.dp)) {
+            TextButton(onClick = onCopy, modifier = Modifier.heightIn(min = 48.dp)) {
                 Text(stringResource(R.string.copy_technology))
             }
         }

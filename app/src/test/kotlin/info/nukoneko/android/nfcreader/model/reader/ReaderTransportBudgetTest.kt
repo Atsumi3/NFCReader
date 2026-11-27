@@ -388,6 +388,81 @@ class ReaderTransportBudgetTest {
     }
 
     @Test
+    fun nfcVBudgetSeparatesScannedTailFromCapacityBeyondLimit() {
+        val uid = byteArrayOf(1, 2, 3, 4, 5, 6, 7, 8)
+        val sent = mutableListOf<ByteArray>()
+        val readContext = context(limits = TechReadLimits(timeoutMillis = 30_000, maxTransceives = 4))
+
+        try {
+            NfcVReader().readWithTransport(
+                uid = uid,
+                maxTransceiveLength = 255,
+                transport = ReadOnlyTransport { command ->
+                    sent += command.copyOf()
+                    when (command[1].toInt() and 0xFF) {
+                        0x2B -> byteArrayOf(0, 0x04) + uid + byteArrayOf(0xFF.toByte(), 0x03)
+                        0x3B -> byteArrayOf(0, 0x04) + uid + byteArrayOf(0xFF.toByte(), 0x0F, 0x03)
+                        0x20 -> byteArrayOf(0, 1, 2, 3, 4)
+                        else -> error("Unexpected NFC-V command")
+                    }
+                },
+                context = readContext,
+            )
+        } catch (_: ReadBudgetExceededException) {
+        }
+
+        val result = readContext.buildResult()
+        val blockUnreadRanges = result.unreadRanges.filter { it.scope == "NFC-V block range" }
+        assertEquals(4, sent.size)
+        assertEquals(listOf(ReadRange(0, 1), ReadRange(1, 2)), result.coverage.completedRanges)
+        assertEquals(ReadRange(0, 4094), result.coverage.expectedRange)
+        assertTrue(blockUnreadRanges.any { it.startInclusive == 2L && it.endExclusive == 4094L })
+        assertTrue(blockUnreadRanges.any { it.startInclusive == 4094L && it.endExclusive == 4096L })
+        assertTrue(blockUnreadRanges.none { it.startInclusive!! < 4094L && it.endExclusive!! > 4094L })
+    }
+
+    @Test
+    fun nfcVCancellationSeparatesScannedTailFromCapacityBeyondLimit() {
+        val uid = byteArrayOf(1, 2, 3, 4, 5, 6, 7, 8)
+        val sent = mutableListOf<ByteArray>()
+        var cancelled = false
+        val readContext = context(
+            limits = TechReadLimits(timeoutMillis = 30_000, maxTransceives = 10),
+            cancellationCheck = { if (cancelled) throw CancellationException("cancelled") },
+        )
+
+        try {
+            NfcVReader().readWithTransport(
+                uid = uid,
+                maxTransceiveLength = 255,
+                transport = ReadOnlyTransport { command ->
+                    sent += command.copyOf()
+                    when (command[1].toInt() and 0xFF) {
+                        0x2B -> byteArrayOf(0, 0x04) + uid + byteArrayOf(0xFF.toByte(), 0x03)
+                        0x3B -> byteArrayOf(0, 0x04) + uid + byteArrayOf(0xFF.toByte(), 0x0F, 0x03)
+                        0x20 -> {
+                            if ((command.last().toInt() and 0xFF) == 1) cancelled = true
+                            byteArrayOf(0, 1, 2, 3, 4)
+                        }
+                        else -> error("Unexpected NFC-V command")
+                    }
+                },
+                context = readContext,
+            )
+        } catch (_: CancellationException) {
+        }
+
+        val result = readContext.buildResult()
+        val blockUnreadRanges = result.unreadRanges.filter { it.scope == "NFC-V block range" }
+        assertEquals(4, sent.size)
+        assertEquals(listOf(ReadRange(0, 1), ReadRange(1, 2)), result.coverage.completedRanges)
+        assertEquals(ReadRange(0, 4094), result.coverage.expectedRange)
+        assertTrue(blockUnreadRanges.any { it.startInclusive == 2L && it.endExclusive == 4094L })
+        assertTrue(blockUnreadRanges.any { it.startInclusive == 4094L && it.endExclusive == 4096L })
+        assertTrue(blockUnreadRanges.none { it.startInclusive!! < 4094L && it.endExclusive!! > 4094L })
+    }
+
+    @Test
     fun felicaDistributesTheUnchangedBatchLimitAcrossAdvertisedSystems() {
         val idm = byteArrayOf(1, 2, 3, 4, 5, 6, 7, 8)
         val commands = mutableListOf<ByteArray>()

@@ -26,21 +26,18 @@ import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.text.selection.SelectionContainer
-import androidx.compose.material3.Button
 import androidx.compose.material3.BottomAppBar
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
-import androidx.compose.foundation.Image
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -56,7 +53,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalUriHandler
-import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -194,9 +190,10 @@ internal fun NfcReadScreen(
                     text = readTime,
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(8.dp),
-                    textAlign = TextAlign.Center,
-                    style = MaterialTheme.typography.titleMedium,
+                        .padding(horizontal = 16.dp, vertical = 4.dp),
+                    textAlign = TextAlign.Start,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
             Box(
@@ -230,20 +227,18 @@ internal fun NfcReadScreen(
                     }
                 } else {
                     when (state) {
-                        ReadStatus.Idle -> ReaderStateCard(
+                        ReadStatus.Idle -> ReaderStateMessage(
                             status = stringResource(R.string.state_waiting),
                             title = stringResource(R.string.please_hold_up_device),
-                            description = stringResource(R.string.idle_read_only_description),
                         )
                         ReadStatus.Reading -> ReadingMessage()
-                        is ReadStatus.Failure.NfcDisabled -> ReaderStateCard(
-                            status = stringResource(R.string.state_nfc_disabled),
-                            title = state.toMessage(),
+                        is ReadStatus.Failure.NfcDisabled -> ReaderStateMessage(
+                            title = stringResource(R.string.state_nfc_disabled),
                             description = stringResource(R.string.nfc_disabled_help),
                             actionLabel = stringResource(R.string.open_nfc_settings),
                             onAction = ::openNfcSettings,
                         )
-                        is ReadStatus.Failure -> ReaderStateCard(
+                        is ReadStatus.Failure -> ReaderStateMessage(
                             status = stringResource(R.string.state_attention),
                             title = state.toMessage(),
                             description = stringResource(R.string.read_error_description),
@@ -275,43 +270,40 @@ internal fun ReadStatus.dumpForDisplay(): NfcDump? = when (this) {
 
 @Composable
 private fun ReadingMessage() {
-    ReaderStateCard(
-        status = stringResource(R.string.state_reading),
-        title = stringResource(R.string.reading_title),
-        description = stringResource(R.string.reading_description),
-        content = {
-            CircularProgressIndicator()
-        },
-    )
+    Row(
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 16.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        CircularProgressIndicator(modifier = Modifier.size(24.dp), strokeWidth = 2.dp)
+        Text(stringResource(R.string.state_reading), style = MaterialTheme.typography.titleMedium)
+    }
 }
 
 @Composable
-private fun ReaderStateCard(
-    status: String,
+private fun ReaderStateMessage(
+    status: String? = null,
     title: String,
-    description: String,
+    description: String? = null,
     actionLabel: String? = null,
     onAction: (() -> Unit)? = null,
-    content: @Composable () -> Unit = {},
 ) {
-    Card(Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 16.dp)) {
-        Column(
-            modifier = Modifier.fillMaxWidth().padding(24.dp).verticalScroll(rememberScrollState()),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(12.dp),
-        ) {
-            Image(
-                painter = painterResource(R.drawable.ic_launcher_foreground),
-                contentDescription = null,
-                modifier = Modifier.size(72.dp),
-            )
-            Text(status, style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
-            Text(title, style = MaterialTheme.typography.headlineSmall, textAlign = TextAlign.Center)
-            Text(description, style = MaterialTheme.typography.bodyLarge, textAlign = TextAlign.Center)
-            if (actionLabel != null && onAction != null) {
-                Button(onClick = onAction, modifier = Modifier.heightIn(min = 48.dp)) { Text(actionLabel) }
-            }
-            content()
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 24.dp, vertical = 16.dp)
+            .verticalScroll(rememberScrollState()),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        status?.let {
+            Text(it, style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        Text(title, style = MaterialTheme.typography.titleLarge)
+        description?.let {
+            Text(it, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        if (actionLabel != null && onAction != null) {
+            TextButton(onClick = onAction, modifier = Modifier.heightIn(min = 48.dp)) { Text(actionLabel) }
         }
     }
 }
@@ -375,21 +367,32 @@ private fun NfcDumpContent(
     }
 
     LazyColumn(
-        modifier = Modifier.fillMaxSize().padding(horizontal = 16.dp),
-        verticalArrangement = Arrangement.spacedBy(8.dp),
+        modifier = Modifier.fillMaxSize(),
+        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
+        verticalArrangement = Arrangement.spacedBy(4.dp),
     ) {
         statusMessage?.let { message ->
             item(key = "status-banner") { ReaderStatusBanner(message, statusDescription, statusActionLabel, onStatusAction) }
         }
-        item(key = "sensitive-warning") {
-            Text(stringResource(R.string.dump_sensitive_warning), style = MaterialTheme.typography.bodyMedium)
+        item(key = "dump-summary") {
+            Column(Modifier.fillMaxWidth()) {
+                Text(stringResource(R.string.result_summary_title), style = MaterialTheme.typography.titleMedium)
+                DumpSummary(
+                    dump = dump,
+                    capturedAt = remember(dump.capturedAtEpochMillis) {
+                        DateFormat.getDateTimeInstance().format(Date(dump.capturedAtEpochMillis))
+                    },
+                    onCopy = ::copy,
+                )
+                HorizontalDivider()
+            }
         }
         item(key = "dump-actions") {
-            Box {
-                Button(
-                    modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
-                    enabled = export != null,
+            Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.CenterEnd) {
+                TextButton(
                     onClick = { actionsExpanded = true },
+                    modifier = Modifier.heightIn(min = 48.dp),
+                    enabled = export != null,
                 ) {
                     Text(stringResource(R.string.dump_actions))
                 }
@@ -433,21 +436,6 @@ private fun NfcDumpContent(
                 }
             }
         }
-        item(key = "dump-summary") {
-            DumpSummaryCard(
-                dump = dump,
-                capturedAt = remember(dump.capturedAtEpochMillis) {
-                    DateFormat.getDateTimeInstance().format(Date(dump.capturedAtEpochMillis))
-                },
-                onCopy = ::copy,
-            )
-        }
-        if (dump.tag.fields.isNotEmpty()) {
-            item(key = "tag-metadata-title") { SectionTitle(stringResource(R.string.metadata_section)) }
-            itemsIndexed(dump.tag.fields, key = { index, _ -> "tag-field-$index" }) { _, field ->
-                ValueRow(field, ::copy)
-            }
-        }
         dump.technologies.forEach { entity ->
             val expanded = expandedTechnologies[entity.techName] == true
             item(key = "tech-header:${entity.techName}") {
@@ -468,11 +456,25 @@ private fun NfcDumpContent(
                 copyValue = ::copy,
             )
         }
+        if (dump.tag.fields.isNotEmpty()) {
+            item(key = "tag-metadata-title") { SectionTitle(stringResource(R.string.metadata_section)) }
+            itemsIndexed(dump.tag.fields, key = { index, _ -> "tag-field-$index" }) { _, field ->
+                ValueRow(field, ::copy)
+            }
+        }
         if (dump.issues.isNotEmpty()) {
             item(key = "dump-issues-title") { SectionTitle(stringResource(R.string.dump_issues)) }
             itemsIndexed(dump.issues, key = { index, _ -> "dump-issue-$index" }) { _, issue ->
                 IssueRow(issue)
             }
+        }
+        item(key = "sensitive-warning") {
+            Text(
+                stringResource(R.string.dump_sensitive_warning),
+                modifier = Modifier.padding(vertical = 8.dp),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
         }
     }
 }
@@ -484,42 +486,34 @@ private fun ReaderStatusBanner(
     actionLabel: String?,
     onAction: (() -> Unit)?,
 ) {
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer),
-    ) {
-        Column(Modifier.fillMaxWidth().padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text(title, style = MaterialTheme.typography.titleMedium)
-            description?.let { Text(it, style = MaterialTheme.typography.bodyMedium) }
-            if (actionLabel != null && onAction != null) {
-                TextButton(onClick = onAction, modifier = Modifier.heightIn(min = 48.dp)) { Text(actionLabel) }
-            }
+    Column(Modifier.fillMaxWidth().padding(vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Text(title, style = MaterialTheme.typography.titleSmall)
+        description?.let {
+            Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
+        if (actionLabel != null && onAction != null) {
+            TextButton(onClick = onAction, modifier = Modifier.heightIn(min = 48.dp)) { Text(actionLabel) }
+        }
+        HorizontalDivider()
     }
 }
 
 @Composable
-private fun DumpSummaryCard(
+private fun DumpSummary(
     dump: NfcDump,
     capturedAt: String,
     onCopy: (String, String) -> Unit,
 ) {
-    Card(
-        modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
-    ) {
-        Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text(stringResource(R.string.result_summary_title), style = MaterialTheme.typography.titleLarge)
-            Text(
-                stringResource(readOutcomeLabelResource(dump.outcome)),
-                style = MaterialTheme.typography.headlineSmall,
-                color = MaterialTheme.colorScheme.primary,
-            )
-            Text(stringResource(R.string.technology_count, dump.technologies.size), style = MaterialTheme.typography.bodyLarge)
-            Text(stringResource(R.string.dump_summary, dump.rawBytesCaptured, dump.rawByteLimit), style = MaterialTheme.typography.bodyMedium)
-            dump.tag.idHex?.let { ValueRow(NfcField(stringResource(R.string.tag_id), it), onCopy) }
-            Text(stringResource(R.string.dump_captured_at, capturedAt), style = MaterialTheme.typography.bodySmall)
-        }
+    Column(Modifier.fillMaxWidth().padding(vertical = 4.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Text(stringResource(readOutcomeLabelResource(dump.outcome)), style = MaterialTheme.typography.titleLarge)
+        dump.tag.idHex?.let { ValueRow(NfcField(stringResource(R.string.tag_id), it), onCopy) }
+        Text(stringResource(R.string.technology_count, dump.technologies.size), style = MaterialTheme.typography.bodySmall)
+        Text(stringResource(R.string.dump_summary, dump.rawBytesCaptured, dump.rawByteLimit), style = MaterialTheme.typography.bodySmall)
+        Text(
+            stringResource(R.string.dump_captured_at, capturedAt),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
     }
 }
 
@@ -604,30 +598,48 @@ private fun TechnologyHeader(
     onToggle: () -> Unit,
     onCopy: () -> Unit,
 ) {
-    Card(Modifier.fillMaxWidth()) {
-        Column(Modifier.padding(8.dp)) {
-            Text(entity.shortName, style = MaterialTheme.typography.titleMedium)
-            Text(stringResource(R.string.technology_outcome, stringResource(readOutcomeLabelResource(entity.readResult.outcome))), style = MaterialTheme.typography.bodySmall)
-            Text(
-                stringResource(R.string.coverage_summary, entity.readResult.coverage.scope, stringResource(if (entity.readResult.coverage.isComplete) R.string.complete else R.string.partial)),
-                style = MaterialTheme.typography.bodySmall,
-            )
-            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                TextButton(onClick = onToggle, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
-                    Text(stringResource(if (expanded) R.string.collapse_details else R.string.expand_details))
-                }
-                TextButton(onClick = onCopy, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
-                    Text(stringResource(R.string.copy_technology))
-                }
+    Column(Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
+        HorizontalDivider()
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                Text(entity.shortName, style = MaterialTheme.typography.titleMedium)
+                Text(entity.techName, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
-            Text(entity.techName, style = MaterialTheme.typography.labelSmall)
+        }
+        Text(
+            stringResource(R.string.technology_outcome, stringResource(readOutcomeLabelResource(entity.readResult.outcome))),
+            style = MaterialTheme.typography.bodySmall,
+        )
+        Text(
+            stringResource(R.string.coverage_summary, entity.readResult.coverage.scope, stringResource(if (entity.readResult.coverage.isComplete) R.string.complete else R.string.partial)),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            TextButton(onClick = onToggle, modifier = Modifier.weight(1f).heightIn(min = 48.dp)) {
+                Text(stringResource(if (expanded) R.string.collapse_details else R.string.expand_details))
+            }
+            TextButton(onClick = onCopy, modifier = Modifier.weight(1f).heightIn(min = 48.dp)) {
+                Text(stringResource(R.string.copy_technology))
+            }
         }
     }
 }
 
 @Composable
 private fun SectionTitle(title: String) {
-    Text(title, modifier = Modifier.padding(start = 8.dp, top = 8.dp), style = MaterialTheme.typography.titleSmall)
+    Column(Modifier.fillMaxWidth().padding(top = 4.dp)) {
+        HorizontalDivider()
+        Text(
+            title,
+            modifier = Modifier.padding(top = 8.dp),
+            style = MaterialTheme.typography.titleSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    }
 }
 
 @Composable

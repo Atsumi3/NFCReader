@@ -55,9 +55,9 @@
     <string name="help_read_title">読み取り</string>
     <string name="help_read">NFC対応端末をタグにかざします。このアプリはAndroidが公開する範囲を読み取り専用で調べます。すべてのタグや内部データを取得できるとは限りません。</string>
     <string name="help_result_title">結果の見方</string>
-    <string name="help_result">技術ごとのカードを開くと、メタデータ、デコード結果、取得したraw bytes、問題を確認できます。数値や識別子は長押しで選択し、必要な値だけコピーできます。</string>
+    <string name="help_result">技術ごとの項目を開くと、メタデータ、デコード結果、取得したraw bytes、問題を確認できます。数値や識別子は長押しで選択し、必要な値だけコピーできます。</string>
     <string name="help_coverage_title">読取範囲</string>
-    <string name="help_coverage">「完全」は宣言された範囲を取得した状態です。「部分」や未読範囲、問題がある場合はカード内に理由を表示します。認証が必要な領域や独自方式は読めないことがあります。</string>
+    <string name="help_coverage">「完全」は宣言された範囲を取得した状態です。「部分」や未読範囲、問題がある場合は詳細に理由を表示します。認証が必要な領域や独自方式は読めないことがあります。</string>
     <string name="help_export_title">保存と共有</string>
     <string name="help_export">テキストまたはJSONを、保存先を選んで保存するか、Androidの共有先を選んで送れます。共有先・保存先がデータをどう扱うかは、そのアプリやサービスに確認してください。</string>
     <string name="help_safety_title">安全に使う</string>
@@ -77,7 +77,6 @@
     <string name="privacy_contact_url">https://github.com/Atsumi3/NFCReader/issues</string>
     <string name="privacy_contact_link">公開GitHub Issuesを開く</string>
     <string name="state_waiting">待機中</string>
-    <string name="idle_read_only_description">タグを端末のNFCアンテナにかざしてください。読み取り専用で動作し、取得データは端末内で処理します。</string>
     <string name="state_nfc_disabled">NFCが無効です</string>
     <string name="nfc_disabled_help">端末のNFCを有効にするとタグを読み取れます。</string>
     <string name="open_nfc_settings">NFC設定を開く</string>
@@ -85,8 +84,6 @@
     <string name="state_attention">確認してください</string>
     <string name="read_error_description">タグを端末に近づけ、しばらく動かさずに読み取りをやり直してください。</string>
     <string name="state_reading">読み取り中</string>
-    <string name="reading_title">タグを読み取っています</string>
-    <string name="reading_description">読み取りが終わるまで、タグを端末に近づけたままにしてください。</string>
     <string name="privacy_link_failed">リンクを開けませんでした</string>
     <string name="result_summary_title">読み取り結果</string>
     <string name="technology_count">取得した技術: %1$d</string>

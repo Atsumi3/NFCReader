@@ -54,7 +54,7 @@
     <string name="help_read_title">Reading</string>
     <string name="help_read">Hold an NFC-capable device near a tag. The app reads only information exposed by Android. It cannot read every tag or all internal data.</string>
     <string name="help_result_title">Understanding results</string>
-    <string name="help_result">Expand a technology card to review metadata, decoded data, captured raw bytes, and issues. Select values to copy only what you need.</string>
+    <string name="help_result">Expand a technology entry to review metadata, decoded data, captured raw bytes, and issues. Select values to copy only what you need.</string>
     <string name="help_coverage_title">Read coverage</string>
     <string name="help_coverage">Complete means the declared range was captured. Partial results, unread ranges, and issues include reasons. Authentication-protected or proprietary data may not be readable.</string>
     <string name="help_export_title">Save and share</string>
@@ -76,7 +76,6 @@
     <string name="privacy_contact_url">https://github.com/Atsumi3/NFCReader/issues</string>
     <string name="privacy_contact_link">Open public GitHub Issues</string>
     <string name="state_waiting">Waiting</string>
-    <string name="idle_read_only_description">Hold a tag near your device\'s NFC antenna. Reading is read-only, and data is processed on this device.</string>
     <string name="state_nfc_disabled">NFC is off</string>
     <string name="nfc_disabled_help">Turn on NFC in your device settings to read tags.</string>
     <string name="open_nfc_settings">Open NFC settings</string>
@@ -84,8 +83,6 @@
     <string name="state_attention">Attention</string>
     <string name="read_error_description">Hold the tag near your device and keep it still while trying again.</string>
     <string name="state_reading">Reading</string>
-    <string name="reading_title">Reading the tag</string>
-    <string name="reading_description">Keep the tag close to your device until reading finishes.</string>
     <string name="privacy_link_failed">Could not open the link</string>
     <string name="result_summary_title">Read summary</string>
     <string name="technology_count">Technologies captured: %1$d</string>

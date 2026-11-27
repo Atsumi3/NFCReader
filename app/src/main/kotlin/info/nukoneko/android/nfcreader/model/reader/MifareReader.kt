@@ -114,7 +114,7 @@ class MifareClassicReader : TechReader {
                 continue
             }
             context.addDecodedFields(listOf(NfcField("Classic.sector[$sector].authentication", "${authentication.type.label} / existing built-in candidate ${authentication.candidateName} accepted")))
-            var activeAuthentication = authentication
+            var activeAuthentication = checkNotNull(authentication)
             for (block in firstBlock until firstBlock + blockCount) {
                 nextBlock = block
                 context.checkpoint()

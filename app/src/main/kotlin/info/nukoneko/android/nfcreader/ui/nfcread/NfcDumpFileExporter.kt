@@ -10,13 +10,27 @@ import java.util.UUID
 
 internal object NfcDumpFileExporter {
     private const val FILE_PROVIDER_SUFFIX = ".fileprovider"
+    private const val SHARE_FILE_PREFIX = "nfc-dump-"
+    private const val SHARE_CACHE_RETENTION_MILLIS = 24 * 60 * 60 * 1000L
 
     fun writeCacheFile(context: Context, extension: String, content: String): File {
         require(extension == "txt" || extension == "json")
+        cleanupStaleShareFiles(context.cacheDir)
         val directory = File(context.cacheDir, "nfc-dumps")
         check(directory.exists() || directory.mkdirs()) { "Unable to create NFC dump cache directory." }
-        return File.createTempFile("nfc-dump-", ".$extension", directory).apply {
+        return File.createTempFile(SHARE_FILE_PREFIX, ".$extension", directory).apply {
             writeText(content, Charsets.UTF_8)
+        }
+    }
+
+    fun cleanupStaleShareFiles(cacheDir: File, nowMillis: Long = System.currentTimeMillis()) {
+        val expiredBefore = nowMillis - SHARE_CACHE_RETENTION_MILLIS
+        File(cacheDir, "nfc-dumps").listFiles()?.forEach { file ->
+            if (file.isFile && file.name.startsWith(SHARE_FILE_PREFIX) &&
+                (file.extension == "txt" || file.extension == "json") && file.lastModified() < expiredBefore
+            ) {
+                file.delete()
+            }
         }
     }
 

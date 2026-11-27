@@ -12,7 +12,10 @@ import androidx.activity.viewModels
 import androidx.compose.runtime.getValue
 import androidx.core.app.PendingIntentCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.lifecycleScope
 import info.nukoneko.android.nfcreader.ui.theme.NfcReaderTheme
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 
 class NfcReadActivity : ComponentActivity() {
 
@@ -38,6 +41,9 @@ class NfcReadActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        lifecycleScope.launch(Dispatchers.IO) {
+            NfcDumpFileExporter.cleanupStaleShareFiles(cacheDir)
+        }
         enableEdgeToEdge()
         setContent {
             NfcReaderTheme {

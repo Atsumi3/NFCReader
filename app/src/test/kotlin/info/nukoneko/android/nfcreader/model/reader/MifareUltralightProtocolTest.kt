@@ -96,7 +96,7 @@ class MifareUltralightProtocolTest {
                         it.location == "page $page" && it.hex == "00000000"
                 })
                 assertTrue(result.decodedFields.any {
-                    it.label == "Ultralight.page[$page]" && it.value.contains("unknown")
+                    it.label == "Ultralight.page[$page]" && it.value?.contains("unknown") == true
                 })
             }
             assertTrue(result.issues.any { it.kind == ReadIssueKind.DATA_REDACTED })

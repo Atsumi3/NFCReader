@@ -107,6 +107,10 @@ class TechReadContext internal constructor(
         readBudget.failureReason()?.let(::exhaustBudget)
     }
 
+    fun checkDeadline() {
+        readBudget.deadlineFailureReason()?.let(::exhaustBudget)
+    }
+
     fun budgetedTransport(delegate: ReadOnlyTransport, operation: String): ReadOnlyTransport =
         ReadOnlyTransport { command ->
             reserveTransceive(operation)

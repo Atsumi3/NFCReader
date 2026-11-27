@@ -1,6 +1,7 @@
 package info.nukoneko.android.nfcreader.model.reader
 
 import android.nfc.TagLostException
+import android.nfc.tech.MifareClassic
 import info.nukoneko.android.nfcreader.extensions.hexToBytes
 import info.nukoneko.android.nfcreader.model.entity.DEFAULT_MAX_FIELD_VALUE_CHARS_PER_DUMP
 import info.nukoneko.android.nfcreader.model.entity.DEFAULT_MAX_RAW_BYTES_PER_DUMP
@@ -11,6 +12,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
+import java.io.IOException
 import java.util.concurrent.CancellationException
 
 @RunWith(RobolectricTestRunner::class)
@@ -101,6 +103,239 @@ class ReaderTransportBudgetTest {
         assertEquals(listOf(0), reads)
         assertEquals(listOf(ReadRange(0, 1)), result.coverage.completedRanges)
         assertTrue(result.unreadRanges.any { it.startInclusive == 1L && it.endExclusive == 4L })
+    }
+
+    @Test
+    fun mifareClassicRestoresSuccessfulAuthenticationAfterFailedKeyBProbes() {
+        var authenticated = false
+        var keyACalls = 0
+        val keyAKeys = mutableListOf<ByteArray>()
+        val readBlocks = mutableListOf<Int>()
+        val transport = object : MifareClassicTransport {
+            override val sectorCount: Int = 1
+            override fun sectorToBlock(sector: Int): Int = 0
+            override fun blockCountInSector(sector: Int): Int = 4
+            override fun authenticateKeyA(sector: Int, key: ByteArray): Boolean {
+                keyACalls++
+                keyAKeys += key.copyOf()
+                authenticated = true
+                return true
+            }
+            override fun authenticateKeyB(sector: Int, key: ByteArray): Boolean {
+                authenticated = false
+                return false
+            }
+            override fun readBlock(block: Int): ByteArray {
+                readBlocks += block
+                if (!authenticated || block == 1) throw IOException("read failed")
+                return ByteArray(16) { block.toByte() }
+            }
+        }
+        val readContext = context()
+
+        MifareClassicReader().readWithTransport(transport, readContext)
+
+        val result = readContext.buildResult()
+        assertEquals(listOf(0, 1, 2, 3), readBlocks)
+        assertEquals(2, keyACalls)
+        assertTrue(keyAKeys[0].contentEquals(keyAKeys[1]))
+        assertTrue(result.decodedFields.any { it.label == "Classic.block[2]" })
+        assertTrue(result.coverage.completedRanges.any { it.startInclusive == 2L && it.endExclusive == 3L })
+        assertTrue(!result.coverage.isComplete)
+    }
+
+    @Test
+    fun mifareClassicRestoresPreviouslySuccessfulKeyBAfterLaterReadFailure() {
+        var authenticatedAs: String? = null
+        var keyACalls = 0
+        var successfulKeyBCalls = 0
+        val readAttempts = mutableMapOf<Int, Int>()
+        val readBlocks = mutableListOf<Int>()
+        val transport = object : MifareClassicTransport {
+            override val sectorCount: Int = 1
+            override fun sectorToBlock(sector: Int): Int = 0
+            override fun blockCountInSector(sector: Int): Int = 4
+            override fun authenticateKeyA(sector: Int, key: ByteArray): Boolean {
+                keyACalls++
+                authenticatedAs = "A"
+                return true
+            }
+            override fun authenticateKeyB(sector: Int, key: ByteArray): Boolean {
+                if (key.contentEquals(MifareClassic.KEY_DEFAULT)) {
+                    successfulKeyBCalls++
+                    authenticatedAs = "B"
+                    return true
+                }
+                authenticatedAs = null
+                return false
+            }
+            override fun readBlock(block: Int): ByteArray {
+                readBlocks += block
+                val attempt = (readAttempts[block] ?: 0) + 1
+                readAttempts[block] = attempt
+                if ((block == 0 && attempt == 1) || (block == 1 && attempt <= 2)) {
+                    authenticatedAs = null
+                    throw IOException("force a later Key B restoration")
+                }
+                if (authenticatedAs != "B") throw IOException("previous Key B authentication was not restored")
+                return ByteArray(16) { block.toByte() }
+            }
+        }
+        val readContext = context()
+
+        MifareClassicReader().readWithTransport(transport, readContext)
+
+        val result = readContext.buildResult()
+        assertEquals(listOf(0, 0, 1, 1, 2, 3), readBlocks)
+        assertEquals(1, keyACalls)
+        assertEquals(3, successfulKeyBCalls)
+        assertTrue(result.coverage.completedRanges.any { it.startInclusive == 0L && it.endExclusive == 1L })
+        assertTrue(result.coverage.completedRanges.any { it.startInclusive == 2L && it.endExclusive == 3L })
+        assertTrue(result.coverage.completedRanges.any { it.startInclusive == 3L && it.endExclusive == 4L })
+        assertTrue(result.unreadRanges.any {
+            it.scope == "MIFARE Classic blocks" && it.startInclusive == 1L && it.endExclusive == 2L
+        })
+        assertTrue(!result.coverage.isComplete)
+    }
+
+    @Test
+    fun mifareClassicBudgetDuringAuthenticationRestoreKeepsCoverageBeforeRethrowing() {
+        var keyACalls = 0
+        var keyBCalls = 0
+        val readBlocks = mutableListOf<Int>()
+        val transport = object : MifareClassicTransport {
+            override val sectorCount: Int = 1
+            override fun sectorToBlock(sector: Int): Int = 0
+            override fun blockCountInSector(sector: Int): Int = 4
+            override fun authenticateKeyA(sector: Int, key: ByteArray): Boolean {
+                keyACalls++
+                return true
+            }
+            override fun authenticateKeyB(sector: Int, key: ByteArray): Boolean {
+                keyBCalls++
+                return false
+            }
+            override fun readBlock(block: Int): ByteArray {
+                readBlocks += block
+                if (block == 0) return ByteArray(16)
+                throw IOException("force Key B probes")
+            }
+        }
+        val readContext = context(limits = TechReadLimits(timeoutMillis = 30_000, maxTransceives = 7))
+        var budgetExceeded = false
+
+        try {
+            MifareClassicReader().readWithTransport(transport, readContext)
+        } catch (_: ReadBudgetExceededException) {
+            budgetExceeded = true
+        }
+
+        val result = readContext.buildResult()
+        assertTrue(budgetExceeded)
+        assertEquals(listOf(0, 1), readBlocks)
+        assertEquals(1, keyACalls)
+        assertEquals(4, keyBCalls)
+        assertEquals(ReadRange(0, 4), result.coverage.expectedRange)
+        assertEquals(listOf(ReadRange(0, 1)), result.coverage.completedRanges)
+        val unreadTail = result.unreadRanges.single { it.scope == "MIFARE Classic blocks" }
+        assertEquals(1L, unreadTail.startInclusive)
+        assertEquals(4L, unreadTail.endExclusive)
+        assertTrue(unreadTail.reason.contains("not obtained"))
+        assertTrue(!unreadTail.reason.contains("not requested"))
+        assertTrue(result.issues.any { it.kind == ReadIssueKind.BUDGET_EXHAUSTED })
+    }
+
+    @Test
+    fun mifareClassicDeadlineDuringAuthenticationTreatsTagLostAsBudgetFailure() {
+        assertClassicAuthenticationDeadlineFailure(TagLostException("connection closed at deadline"))
+    }
+
+    @Test
+    fun mifareClassicDeadlineDuringAuthenticationTreatsIoFailureAsBudgetFailure() {
+        assertClassicAuthenticationDeadlineFailure(IOException("connection closed at deadline"))
+    }
+
+    @Test
+    fun mifareClassicDeadlineDuringAuthenticationRestoreTreatsTagLostAsBudgetFailure() {
+        assertClassicAuthenticationRestoreDeadlineFailure(TagLostException("connection closed at deadline"))
+    }
+
+    @Test
+    fun mifareClassicDeadlineDuringAuthenticationRestoreTreatsIoFailureAsBudgetFailure() {
+        assertClassicAuthenticationRestoreDeadlineFailure(IOException("connection closed at deadline"))
+    }
+
+    @Test
+    fun mifareClassicTagLossDuringAuthenticationRestoreStopsTheWholeScan() {
+        var sectorZeroKeyACalls = 0
+        var laterSectorAuthenticationCalls = 0
+        val readBlocks = mutableListOf<Int>()
+        val transport = object : MifareClassicTransport {
+            override val sectorCount: Int = 2
+            override fun sectorToBlock(sector: Int): Int = sector * 2
+            override fun blockCountInSector(sector: Int): Int = 2
+            override fun authenticateKeyA(sector: Int, key: ByteArray): Boolean {
+                if (sector == 0) {
+                    sectorZeroKeyACalls++
+                    if (sectorZeroKeyACalls == 1) return true
+                    throw TagLostException("tag left during authentication restore")
+                }
+                laterSectorAuthenticationCalls++
+                return true
+            }
+            override fun authenticateKeyB(sector: Int, key: ByteArray): Boolean = false
+            override fun readBlock(block: Int): ByteArray {
+                readBlocks += block
+                if (block == 1) throw IOException("force authentication restore")
+                return ByteArray(16)
+            }
+        }
+        val readContext = context()
+
+        MifareClassicReader().readWithTransport(transport, readContext)
+
+        val result = readContext.buildResult()
+        assertEquals(2, sectorZeroKeyACalls)
+        assertEquals(0, laterSectorAuthenticationCalls)
+        assertEquals(listOf(0, 1), readBlocks)
+        assertEquals(ReadRange(0, 4), result.coverage.expectedRange)
+        assertEquals(listOf(ReadRange(0, 1)), result.coverage.completedRanges)
+        val unreadTail = result.unreadRanges.single { it.scope == "MIFARE Classic blocks" }
+        assertEquals(1L, unreadTail.startInclusive)
+        assertEquals(4L, unreadTail.endExclusive)
+        assertTrue(unreadTail.reason.contains("not obtained"))
+        assertTrue(!unreadTail.reason.contains("not requested"))
+        assertTrue(result.issues.any { it.kind == ReadIssueKind.TAG_LOST })
+        assertTrue(result.issues.none { it.kind == ReadIssueKind.AUTHENTICATION_REQUIRED })
+    }
+
+    @Test
+    fun mifareClassicTagLossAtLastAllowedTransceiveIsNotBudgetExhaustion() {
+        var keyACalls = 0
+        val transport = object : MifareClassicTransport {
+            override val sectorCount: Int = 1
+            override fun sectorToBlock(sector: Int): Int = 0
+            override fun blockCountInSector(sector: Int): Int = 4
+            override fun authenticateKeyA(sector: Int, key: ByteArray): Boolean {
+                keyACalls++
+                return true
+            }
+            override fun authenticateKeyB(sector: Int, key: ByteArray): Boolean = false
+            override fun readBlock(block: Int): ByteArray = throw TagLostException("tag left during last allowed transceive")
+        }
+        val readContext = context(limits = TechReadLimits(timeoutMillis = 30_000, maxTransceives = 2))
+
+        MifareClassicReader().readWithTransport(transport, readContext)
+
+        val result = readContext.buildResult()
+        assertEquals(1, keyACalls)
+        assertEquals(ReadRange(0, 4), result.coverage.expectedRange)
+        assertTrue(result.coverage.completedRanges.isEmpty())
+        val unreadTail = result.unreadRanges.single { it.scope == "MIFARE Classic blocks" }
+        assertEquals(0L, unreadTail.startInclusive)
+        assertEquals(4L, unreadTail.endExclusive)
+        assertTrue(result.issues.any { it.kind == ReadIssueKind.TAG_LOST })
+        assertTrue(result.issues.none { it.kind == ReadIssueKind.BUDGET_EXHAUSTED })
     }
 
     @Test
@@ -226,6 +461,112 @@ class ReaderTransportBudgetTest {
     }
 
     @Test
+    fun nfcVBlockBudgetKeepsCompletedAndUnreadCoverageBeforeStopping() {
+        val uid = byteArrayOf(1, 2, 3, 4, 5, 6, 7, 8)
+        val sent = mutableListOf<ByteArray>()
+        val readContext = context(limits = TechReadLimits(timeoutMillis = 30_000, maxTransceives = 2))
+
+        try {
+            NfcVReader().readWithTransport(
+                uid = uid,
+                maxTransceiveLength = 255,
+                transport = ReadOnlyTransport { command ->
+                    sent += command.copyOf()
+                    when (command[1].toInt() and 0xFF) {
+                        0x2B -> byteArrayOf(0x00, 0x04) + uid + byteArrayOf(3, 3)
+                        0x20 -> byteArrayOf(0, 1, 2, 3, 4)
+                        else -> error("Unexpected NFC-V command")
+                    }
+                },
+                context = readContext,
+            )
+        } catch (_: ReadBudgetExceededException) {
+        }
+
+        val result = readContext.buildResult()
+        assertEquals(2, sent.size)
+        assertEquals(1, sent.count { (it[1].toInt() and 0xFF) == 0x20 })
+        assertEquals(listOf(ReadRange(0, 1)), result.coverage.completedRanges)
+        assertTrue(result.unreadRanges.any { it.startInclusive == 1L && it.endExclusive == 4L })
+        assertTrue(result.issues.any { it.kind == ReadIssueKind.BUDGET_EXHAUSTED })
+    }
+
+    @Test
+    fun nfcVBudgetSeparatesScannedTailFromCapacityBeyondLimit() {
+        val uid = byteArrayOf(1, 2, 3, 4, 5, 6, 7, 8)
+        val sent = mutableListOf<ByteArray>()
+        val readContext = context(limits = TechReadLimits(timeoutMillis = 30_000, maxTransceives = 4))
+
+        try {
+            NfcVReader().readWithTransport(
+                uid = uid,
+                maxTransceiveLength = 255,
+                transport = ReadOnlyTransport { command ->
+                    sent += command.copyOf()
+                    when (command[1].toInt() and 0xFF) {
+                        0x2B -> byteArrayOf(0, 0x04) + uid + byteArrayOf(0xFF.toByte(), 0x03)
+                        0x3B -> byteArrayOf(0, 0x04) + uid + byteArrayOf(0xFF.toByte(), 0x0F, 0x03)
+                        0x20 -> byteArrayOf(0, 1, 2, 3, 4)
+                        else -> error("Unexpected NFC-V command")
+                    }
+                },
+                context = readContext,
+            )
+        } catch (_: ReadBudgetExceededException) {
+        }
+
+        val result = readContext.buildResult()
+        val blockUnreadRanges = result.unreadRanges.filter { it.scope == "NFC-V block range" }
+        assertEquals(4, sent.size)
+        assertEquals(listOf(ReadRange(0, 1), ReadRange(1, 2)), result.coverage.completedRanges)
+        assertEquals(ReadRange(0, 4094), result.coverage.expectedRange)
+        assertTrue(blockUnreadRanges.any { it.startInclusive == 2L && it.endExclusive == 4094L })
+        assertTrue(blockUnreadRanges.any { it.startInclusive == 4094L && it.endExclusive == 4096L })
+        assertTrue(blockUnreadRanges.none { it.startInclusive!! < 4094L && it.endExclusive!! > 4094L })
+    }
+
+    @Test
+    fun nfcVCancellationSeparatesScannedTailFromCapacityBeyondLimit() {
+        val uid = byteArrayOf(1, 2, 3, 4, 5, 6, 7, 8)
+        val sent = mutableListOf<ByteArray>()
+        var cancelled = false
+        val readContext = context(
+            limits = TechReadLimits(timeoutMillis = 30_000, maxTransceives = 10),
+            cancellationCheck = { if (cancelled) throw CancellationException("cancelled") },
+        )
+
+        try {
+            NfcVReader().readWithTransport(
+                uid = uid,
+                maxTransceiveLength = 255,
+                transport = ReadOnlyTransport { command ->
+                    sent += command.copyOf()
+                    when (command[1].toInt() and 0xFF) {
+                        0x2B -> byteArrayOf(0, 0x04) + uid + byteArrayOf(0xFF.toByte(), 0x03)
+                        0x3B -> byteArrayOf(0, 0x04) + uid + byteArrayOf(0xFF.toByte(), 0x0F, 0x03)
+                        0x20 -> {
+                            if ((command.last().toInt() and 0xFF) == 1) cancelled = true
+                            byteArrayOf(0, 1, 2, 3, 4)
+                        }
+                        else -> error("Unexpected NFC-V command")
+                    }
+                },
+                context = readContext,
+            )
+        } catch (_: CancellationException) {
+        }
+
+        val result = readContext.buildResult()
+        val blockUnreadRanges = result.unreadRanges.filter { it.scope == "NFC-V block range" }
+        assertEquals(4, sent.size)
+        assertEquals(listOf(ReadRange(0, 1), ReadRange(1, 2)), result.coverage.completedRanges)
+        assertEquals(ReadRange(0, 4094), result.coverage.expectedRange)
+        assertTrue(blockUnreadRanges.any { it.startInclusive == 2L && it.endExclusive == 4094L })
+        assertTrue(blockUnreadRanges.any { it.startInclusive == 4094L && it.endExclusive == 4096L })
+        assertTrue(blockUnreadRanges.none { it.startInclusive!! < 4094L && it.endExclusive!! > 4094L })
+    }
+
+    @Test
     fun felicaDistributesTheUnchangedBatchLimitAcrossAdvertisedSystems() {
         val idm = byteArrayOf(1, 2, 3, 4, 5, 6, 7, 8)
         val commands = mutableListOf<ByteArray>()
@@ -259,6 +600,96 @@ class ReaderTransportBudgetTest {
         assertTrue(secondSystemPoll >= 0)
         assertEquals(32, serviceCommands.count { command -> commands.indexOf(command) < secondSystemPoll })
         assertEquals(32, serviceCommands.count { command -> commands.indexOf(command) > secondSystemPoll })
+    }
+
+    private fun assertClassicAuthenticationDeadlineFailure(transportException: IOException) {
+        val readContext = context()
+        val readBlocks = mutableListOf<Int>()
+        var laterSectorAuthenticationCalls = 0
+        val transport = object : MifareClassicTransport {
+            override val sectorCount: Int = 2
+            override fun sectorToBlock(sector: Int): Int = sector * 2
+            override fun blockCountInSector(sector: Int): Int = 2
+            override fun authenticateKeyA(sector: Int, key: ByteArray): Boolean {
+                if (sector == 1) {
+                    laterSectorAuthenticationCalls++
+                    readContext.expireDeadline()
+                    throw transportException
+                }
+                return true
+            }
+            override fun authenticateKeyB(sector: Int, key: ByteArray): Boolean = false
+            override fun readBlock(block: Int): ByteArray {
+                readBlocks += block
+                return ByteArray(16) { block.toByte() }
+            }
+        }
+        var budgetExceeded = false
+
+        try {
+            MifareClassicReader().readWithTransport(transport, readContext)
+        } catch (_: ReadBudgetExceededException) {
+            budgetExceeded = true
+        }
+
+        val result = readContext.buildResult()
+        assertTrue(budgetExceeded)
+        assertEquals(listOf(0, 1), readBlocks)
+        assertEquals(1, laterSectorAuthenticationCalls)
+        assertEquals(ReadRange(0, 4), result.coverage.expectedRange)
+        assertEquals(listOf(ReadRange(0, 1), ReadRange(1, 2)), result.coverage.completedRanges)
+        val unreadTail = result.unreadRanges.single { it.scope == "MIFARE Classic blocks" }
+        assertEquals(2L, unreadTail.startInclusive)
+        assertEquals(4L, unreadTail.endExclusive)
+        assertTrue(unreadTail.reason.contains("not obtained"))
+        assertTrue(result.issues.any { it.kind == ReadIssueKind.BUDGET_EXHAUSTED })
+        assertTrue(result.issues.none { it.kind == ReadIssueKind.TAG_LOST || it.kind == ReadIssueKind.IO_ERROR })
+    }
+
+    private fun assertClassicAuthenticationRestoreDeadlineFailure(restoreException: IOException) {
+        val readContext = context()
+        var keyACalls = 0
+        val readBlocks = mutableListOf<Int>()
+        val transport = object : MifareClassicTransport {
+            override val sectorCount: Int = 1
+            override fun sectorToBlock(sector: Int): Int = 0
+            override fun blockCountInSector(sector: Int): Int = 4
+            override fun authenticateKeyA(sector: Int, key: ByteArray): Boolean {
+                keyACalls++
+                if (keyACalls == 2) {
+                    readContext.expireDeadline()
+                    throw restoreException
+                }
+                return true
+            }
+            override fun authenticateKeyB(sector: Int, key: ByteArray): Boolean = false
+            override fun readBlock(block: Int): ByteArray {
+                readBlocks += block
+                if (block == 1) throw IOException("force authentication restore")
+                return ByteArray(16) { block.toByte() }
+            }
+        }
+        var budgetExceeded = false
+
+        try {
+            MifareClassicReader().readWithTransport(transport, readContext)
+        } catch (_: ReadBudgetExceededException) {
+            budgetExceeded = true
+        }
+
+        val result = readContext.buildResult()
+        assertTrue(budgetExceeded)
+        assertEquals(2, keyACalls)
+        assertEquals(listOf(0, 1), readBlocks)
+        assertEquals(ReadRange(0, 4), result.coverage.expectedRange)
+        assertEquals(listOf(ReadRange(0, 1)), result.coverage.completedRanges)
+        val unreadTail = result.unreadRanges.single { it.scope == "MIFARE Classic blocks" }
+        assertEquals(1L, unreadTail.startInclusive)
+        assertEquals(4L, unreadTail.endExclusive)
+        assertTrue(unreadTail.reason.contains("not obtained"))
+        assertTrue(result.issues.any { it.kind == ReadIssueKind.BUDGET_EXHAUSTED })
+        assertTrue(result.issues.any { it.kind == ReadIssueKind.IO_ERROR })
+        assertTrue(result.issues.none { it.kind == ReadIssueKind.TAG_LOST })
     }
 
     private fun context(

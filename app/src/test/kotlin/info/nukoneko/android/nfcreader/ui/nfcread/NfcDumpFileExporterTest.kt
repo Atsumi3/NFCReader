@@ -1,6 +1,7 @@
 package info.nukoneko.android.nfcreader.ui.nfcread
 
 import android.content.Context
+import android.content.ContextWrapper
 import android.content.Intent
 import android.net.Uri
 import android.os.Build
@@ -17,6 +18,7 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.RuntimeEnvironment
 import org.robolectric.annotation.Config
 import java.io.ByteArrayOutputStream
+import java.io.File
 import java.io.OutputStream
 import java.nio.file.Files
 import java.util.concurrent.CountDownLatch
@@ -49,6 +51,60 @@ class NfcDumpFileExporterTest {
         assertTrue(intent.flags and Intent.FLAG_GRANT_READ_URI_PERMISSION != 0)
         assertFalse(intent.hasExtra(Intent.EXTRA_TEXT))
         assertEquals(content, file.readText())
+    }
+
+    @Test
+    fun cleanupRemovesOnlyShareAttachmentsOlderThan24Hours() {
+        val cacheDir = Files.createTempDirectory("nfc-dump-cache-cleanup").toFile()
+        val shareDir = File(cacheDir, "nfc-dumps").apply { mkdirs() }
+        val now = 1_700_000_000_000L
+        val retention = 24L * 60L * 60L * 1000L
+        fun createFile(name: String, modifiedAt: Long) = File(shareDir, name).apply {
+            writeText("attachment")
+            assertTrue(setLastModified(modifiedAt))
+        }
+        val expired = createFile("nfc-dump-expired.txt", now - retention - 10_000L)
+        val boundary = createFile("nfc-dump-boundary.json", now - retention)
+        val recent = createFile("nfc-dump-recent.txt", now - retention + 10_000L)
+        val pending = createFile("pending-export-token", now - retention - 10_000L)
+        val unrelated = createFile("other.txt", now - retention - 10_000L)
+
+        try {
+            NfcDumpFileExporter.cleanupStaleShareFiles(cacheDir, now)
+
+            assertFalse(expired.exists())
+            assertTrue(boundary.exists())
+            assertTrue(recent.exists())
+            assertTrue(pending.exists())
+            assertTrue(unrelated.exists())
+        } finally {
+            cacheDir.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun writingNewShareAttachmentPrunesExpiredFilesWithoutDeletingRecentFiles() {
+        val testCacheDir = Files.createTempDirectory("nfc-dump-share").toFile()
+        val shareDir = File(testCacheDir, "nfc-dumps").apply { mkdirs() }
+        val old = File(shareDir, "nfc-dump-expired.txt").apply {
+            writeText("expired")
+            setLastModified(System.currentTimeMillis() - 24L * 60L * 60L * 1000L - 60_000L)
+        }
+        val recent = File(shareDir, "nfc-dump-recent.json").apply { writeText("recent") }
+        val context = object : ContextWrapper(RuntimeEnvironment.getApplication()) {
+            override fun getCacheDir(): File = testCacheDir
+        }
+
+        try {
+            val attachment = NfcDumpFileExporter.writeCacheFile(context, "json", "new dump")
+
+            assertFalse(old.exists())
+            assertTrue(recent.exists())
+            assertTrue(attachment.exists())
+            assertEquals("new dump", attachment.readText())
+        } finally {
+            testCacheDir.deleteRecursively()
+        }
     }
 
     @Test

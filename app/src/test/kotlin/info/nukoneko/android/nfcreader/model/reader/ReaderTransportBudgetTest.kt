@@ -144,6 +144,97 @@ class ReaderTransportBudgetTest {
     }
 
     @Test
+    fun mifareClassicBudgetDuringAuthenticationRestoreKeepsCoverageBeforeRethrowing() {
+        var keyACalls = 0
+        var keyBCalls = 0
+        val readBlocks = mutableListOf<Int>()
+        val transport = object : MifareClassicTransport {
+            override val sectorCount: Int = 1
+            override fun sectorToBlock(sector: Int): Int = 0
+            override fun blockCountInSector(sector: Int): Int = 4
+            override fun authenticateKeyA(sector: Int, key: ByteArray): Boolean {
+                keyACalls++
+                return true
+            }
+            override fun authenticateKeyB(sector: Int, key: ByteArray): Boolean {
+                keyBCalls++
+                return false
+            }
+            override fun readBlock(block: Int): ByteArray {
+                readBlocks += block
+                if (block == 0) return ByteArray(16)
+                throw IOException("force Key B probes")
+            }
+        }
+        val readContext = context(limits = TechReadLimits(timeoutMillis = 30_000, maxTransceives = 7))
+        var budgetExceeded = false
+
+        try {
+            MifareClassicReader().readWithTransport(transport, readContext)
+        } catch (_: ReadBudgetExceededException) {
+            budgetExceeded = true
+        }
+
+        val result = readContext.buildResult()
+        assertTrue(budgetExceeded)
+        assertEquals(listOf(0, 1), readBlocks)
+        assertEquals(1, keyACalls)
+        assertEquals(4, keyBCalls)
+        assertEquals(ReadRange(0, 4), result.coverage.expectedRange)
+        assertEquals(listOf(ReadRange(0, 1)), result.coverage.completedRanges)
+        val unreadTail = result.unreadRanges.single { it.scope == "MIFARE Classic blocks" }
+        assertEquals(1L, unreadTail.startInclusive)
+        assertEquals(4L, unreadTail.endExclusive)
+        assertTrue(unreadTail.reason.contains("not obtained"))
+        assertTrue(!unreadTail.reason.contains("not requested"))
+        assertTrue(result.issues.any { it.kind == ReadIssueKind.BUDGET_EXHAUSTED })
+    }
+
+    @Test
+    fun mifareClassicTagLossDuringAuthenticationRestoreStopsTheWholeScan() {
+        var sectorZeroKeyACalls = 0
+        var laterSectorAuthenticationCalls = 0
+        val readBlocks = mutableListOf<Int>()
+        val transport = object : MifareClassicTransport {
+            override val sectorCount: Int = 2
+            override fun sectorToBlock(sector: Int): Int = sector * 2
+            override fun blockCountInSector(sector: Int): Int = 2
+            override fun authenticateKeyA(sector: Int, key: ByteArray): Boolean {
+                if (sector == 0) {
+                    sectorZeroKeyACalls++
+                    if (sectorZeroKeyACalls == 1) return true
+                    throw TagLostException("tag left during authentication restore")
+                }
+                laterSectorAuthenticationCalls++
+                return true
+            }
+            override fun authenticateKeyB(sector: Int, key: ByteArray): Boolean = false
+            override fun readBlock(block: Int): ByteArray {
+                readBlocks += block
+                if (block == 1) throw IOException("force authentication restore")
+                return ByteArray(16)
+            }
+        }
+        val readContext = context()
+
+        MifareClassicReader().readWithTransport(transport, readContext)
+
+        val result = readContext.buildResult()
+        assertEquals(2, sectorZeroKeyACalls)
+        assertEquals(0, laterSectorAuthenticationCalls)
+        assertEquals(listOf(0, 1), readBlocks)
+        assertEquals(ReadRange(0, 4), result.coverage.expectedRange)
+        assertEquals(listOf(ReadRange(0, 1)), result.coverage.completedRanges)
+        val unreadTail = result.unreadRanges.single { it.scope == "MIFARE Classic blocks" }
+        assertEquals(1L, unreadTail.startInclusive)
+        assertEquals(4L, unreadTail.endExclusive)
+        assertTrue(unreadTail.reason.contains("not obtained"))
+        assertTrue(!unreadTail.reason.contains("not requested"))
+        assertTrue(result.issues.any { it.kind == ReadIssueKind.TAG_LOST })
+        assertTrue(result.issues.none { it.kind == ReadIssueKind.AUTHENTICATION_REQUIRED })
+    }
+
+    @Test
     fun nfcVReaderRoutesSystemInformationThroughFakeTransportAndStopsOnTagLoss() {
         val sent = mutableListOf<ByteArray>()
         val context = context()

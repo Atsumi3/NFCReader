@@ -66,7 +66,7 @@ class MifareClassicReader : TechReader {
         val completedBlocks = mutableListOf<ReadRange>()
         var nextBlock = 0
         try {
-        sectorLoop@ for (sector in 0 until mfc.sectorCount) {
+        for (sector in 0 until mfc.sectorCount) {
             val firstBlock = mfc.sectorToBlock(sector)
             val blockCount = mfc.blockCountInSector(sector)
             nextBlock = firstBlock
@@ -78,6 +78,7 @@ class MifareClassicReader : TechReader {
             } catch (exception: ReadBudgetExceededException) {
                 throw exception
             } catch (exception: Exception) {
+                if (exception is TagLostException) throw exception
                 recordIoFailure(context, exception, "sector $sector")
                 context.addUnreadRange(
                     UnreadRange(
@@ -88,7 +89,6 @@ class MifareClassicReader : TechReader {
                         reason = "Sector access result is unknown because authentication I/O failed.",
                     )
                 )
-                if (exception is TagLostException) break@sectorLoop
                 nextBlock = firstBlock + blockCount
                 continue
             }
@@ -126,11 +126,8 @@ class MifareClassicReader : TechReader {
                 } catch (exception: ReadBudgetExceededException) {
                     throw exception
                 } catch (exception: Exception) {
+                    if (exception is TagLostException) throw exception
                     recordIoFailure(context, exception, "block $block")
-                    if (exception is TagLostException) {
-                        context.addUnreadRange(UnreadRange("MIFARE Classic blocks", "block", block.toLong(), totalBlocks.toLong(), "Tag was lost before remaining blocks were read."))
-                        break@sectorLoop
-                    }
                     var recovered: ByteArray? = null
                     var recoveredAuthentication: Authentication? = null
                     for ((candidate, candidateName) in DEFAULT_KEYS) {
@@ -151,15 +148,11 @@ class MifareClassicReader : TechReader {
                         } catch (retryException: ReadBudgetExceededException) {
                             throw retryException
                         } catch (retryException: Exception) {
+                            if (retryException is TagLostException) throw retryException
                             recordIoFailure(context, retryException, "block $block Key B $candidateName")
-                            if (retryException is TagLostException) {
-                                context.addUnreadRange(UnreadRange("MIFARE Classic blocks", "block", block.toLong(), totalBlocks.toLong(), "Tag was lost before remaining blocks were read."))
-                                break@sectorLoop
-                            }
                         }
                     }
                     if (recovered == null || recovered.size != 16) {
-                        context.addUnreadRange(UnreadRange("MIFARE Classic blocks", "block", block.toLong(), (block + 1).toLong(), "Read failed with the existing Key B candidates."))
                         val restored = try {
                             authenticate(mfc, sector, activeAuthentication, context)
                         } catch (restoreException: CancellationException) {
@@ -167,14 +160,16 @@ class MifareClassicReader : TechReader {
                         } catch (restoreException: ReadBudgetExceededException) {
                             throw restoreException
                         } catch (restoreException: Exception) {
+                            if (restoreException is TagLostException) throw restoreException
                             recordIoFailure(context, restoreException, "sector $sector authentication restore")
                             false
                         }
+                        context.addUnreadRange(UnreadRange("MIFARE Classic blocks", "block", block.toLong(), (block + 1).toLong(), "Read failed with the existing Key B candidates."))
                         if (!restored) {
                             context.addIssue(
                                 ReadIssue(
                                     ReadIssueKind.AUTHENTICATION_REQUIRED,
-                                    "The successful sector authentication could not be restored; remaining blocks were not requested.",
+                                    "The successful sector authentication could not be restored; the current and remaining blocks were not obtained.",
                                     "sector $sector",
                                 )
                             )
@@ -234,18 +229,33 @@ class MifareClassicReader : TechReader {
             nextBlock = firstBlock + blockCount
         }
         } catch (cancelled: CancellationException) {
-            if (nextBlock < totalBlocks) {
-                context.addUnreadRange(UnreadRange("MIFARE Classic blocks", "block", nextBlock.toLong(), totalBlocks.toLong(), "Read cancelled; remaining blocks were not requested."))
-            }
-            context.setCoverage(
-                ReadCoverage(
-                    scope = "MIFARE Classic blocks as returned by Android",
-                    unit = "block",
-                    expectedRange = ReadRange(0, totalBlocks.toLong()),
-                    completedRanges = completedBlocks,
-                )
+            recordStoppedRead(
+                context,
+                totalBlocks,
+                completedBlocks,
+                nextBlock,
+                "Read cancelled; remaining blocks were not obtained.",
             )
             throw cancelled
+        } catch (budgetExceeded: ReadBudgetExceededException) {
+            recordStoppedRead(
+                context,
+                totalBlocks,
+                completedBlocks,
+                nextBlock,
+                "Read budget exceeded; remaining blocks were not obtained.",
+            )
+            throw budgetExceeded
+        } catch (tagLost: TagLostException) {
+            recordIoFailure(context, tagLost, "MIFARE Classic")
+            recordStoppedRead(
+                context,
+                totalBlocks,
+                completedBlocks,
+                nextBlock,
+                "Tag was lost; remaining blocks were not obtained.",
+            )
+            return
         }
         context.setCoverage(
             ReadCoverage(
@@ -256,6 +266,30 @@ class MifareClassicReader : TechReader {
             )
         )
         if (completedBlocks.size == totalBlocks) context.markComplete() else context.markPartial()
+    }
+
+    private fun recordStoppedRead(
+        context: TechReadContext,
+        totalBlocks: Int,
+        completedBlocks: List<ReadRange>,
+        firstUnreadBlock: Int,
+        reason: String,
+    ) {
+        val unreadFrom = firstUnreadBlock.coerceIn(0, totalBlocks)
+        if (unreadFrom < totalBlocks) {
+            context.addUnreadRange(
+                UnreadRange("MIFARE Classic blocks", "block", unreadFrom.toLong(), totalBlocks.toLong(), reason)
+            )
+        }
+        context.setCoverage(
+            ReadCoverage(
+                scope = "MIFARE Classic blocks as returned by Android",
+                unit = "block",
+                expectedRange = ReadRange(0, totalBlocks.toLong()),
+                completedRanges = completedBlocks,
+            )
+        )
+        context.markPartial()
     }
 
     private fun authenticateAnyDefaultKey(mfc: MifareClassicTransport, sector: Int, context: TechReadContext): Authentication? {

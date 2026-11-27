@@ -305,8 +305,8 @@ class MifareUltralightProtocolTest {
     }
 
     private fun newContext(
-        cancellationCheck: () -> Unit = {},
         limits: TechReadLimits = TechReadLimits(timeoutMillis = 30_000, maxTransceives = 4096),
+        cancellationCheck: () -> Unit = {},
     ) = TechReadContext(
         rawBudget = RawCaptureBudget(64 * 1024),
         fieldBudget = FieldValueBudget(64 * 1024),

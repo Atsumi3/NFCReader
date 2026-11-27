@@ -88,6 +88,7 @@ internal object MifareUltralightProtocol {
         val completed = mutableListOf<ReadRange>()
         val maskedPagesRead = mutableSetOf<Int>()
         var page = 0
+        var nextUnrequestedPage = 0
         var stoppedAt: Int? = null
         var fastReadUsedFallback = false
         try {
@@ -119,6 +120,7 @@ internal object MifareUltralightProtocol {
                     val currentPage = page + offset
                     val bytes = response.copyOfRange(offset * PAGE_SIZE, (offset + 1) * PAGE_SIZE)
                     recordKnownPage(context, profile, currentPage, bytes, completed, maskedPagesRead)
+                    nextUnrequestedPage = currentPage + 1
                 }
                 page = end + 1
                 continue
@@ -134,24 +136,31 @@ internal object MifareUltralightProtocol {
                     break
                 }
                 recordKnownPage(context, profile, fallbackPage, bytes, completed, maskedPagesRead)
+                nextUnrequestedPage = fallbackPage + 1
             }
             if (stoppedAt != null) break
             page = end + 1
         }
         } catch (cancelled: CancellationException) {
-            val unreadFrom = completed.maxOfOrNull { it.endExclusive }?.toInt() ?: 0
-            if (unreadFrom < pageCount) {
-                context.addUnreadRange(UnreadRange(profile.name + " pages", "page", unreadFrom.toLong(), pageCount.toLong(), "Read cancelled; remaining pages were not requested."))
-            }
-            context.setCoverage(
-                ReadCoverage(
-                    scope = "%s pages 0..%d".format(profile.name, profile.lastPage),
-                    unit = "page",
-                    expectedRange = ReadRange(0, pageCount.toLong()),
-                    completedRanges = completed,
-                )
+            recordKnownProfileStop(
+                context,
+                profile,
+                pageCount,
+                nextUnrequestedPage,
+                completed,
+                "Read cancelled; remaining pages were not obtained.",
             )
             throw cancelled
+        } catch (budgetExceeded: ReadBudgetExceededException) {
+            recordKnownProfileStop(
+                context,
+                profile,
+                pageCount,
+                nextUnrequestedPage,
+                completed,
+                "Read budget exceeded; remaining pages were not obtained.",
+            )
+            throw budgetExceeded
         }
         context.setCoverage(
             ReadCoverage(
@@ -172,6 +181,36 @@ internal object MifareUltralightProtocol {
         } else {
             context.markComplete()
         }
+    }
+
+    private fun recordKnownProfileStop(
+        context: TechReadContext,
+        profile: UltralightVersionProfile,
+        pageCount: Int,
+        nextUnrequestedPage: Int,
+        completed: List<ReadRange>,
+        reason: String,
+    ) {
+        if (nextUnrequestedPage < pageCount) {
+            context.addUnreadRange(
+                UnreadRange(
+                    profile.name + " pages",
+                    "page",
+                    nextUnrequestedPage.toLong(),
+                    pageCount.toLong(),
+                    reason,
+                )
+            )
+        }
+        context.setCoverage(
+            ReadCoverage(
+                scope = "%s pages 0..%d".format(profile.name, profile.lastPage),
+                unit = "page",
+                expectedRange = ReadRange(0, pageCount.toLong()),
+                completedRanges = completed,
+            )
+        )
+        context.markPartial()
     }
 
     private fun readUnknownCapacity(transport: ReadOnlyTransport, context: TechReadContext) {
